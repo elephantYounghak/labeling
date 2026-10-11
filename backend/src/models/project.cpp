@@ -1,0 +1,17 @@
+#include "models/project.h"
+
+#include "db/database.h"
+
+void upload_project(Project& project)
+{
+    soci::session db = get_db();
+    int id = 0;
+    db << "INSERT INTO dbo.projects (name, description, path, created_at, updated_at) "
+          "VALUES (:name, :description, :path, CONVERT(DATETIME2, :created_at, 127), SYSUTCDATETIME())",
+        soci::use(project.name, "name"),
+        soci::use(project.description, "description"),
+        soci::use(project.path, "path"),
+        soci::use(project.created_at, "created_at");
+    db << "SELECT CAST(SCOPE_IDENTITY() AS INT)", soci::into(id);
+    project.id = std::to_string(id);
+}
