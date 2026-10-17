@@ -1,3 +1,4 @@
+#include "api/ai.h"
 #include "api/io.h"
 #include "api/labeling.h"
 #include "api/project.h"
@@ -13,6 +14,8 @@ int main()
     upload_labeling_api();
     update_labeling_api();
     upload_folder_api();
+    load_ai_api();
+    run_ai_api();
     drogon::app().addListener("0.0.0.0", 18080).run();
     return 0;
 }

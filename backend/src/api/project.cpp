@@ -8,7 +8,7 @@
 void upload_project_api()
 {
     drogon::app().registerHandler(
-        "/api/projects",
+        "/project/upload",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = req->getJsonObject();
             Project project;

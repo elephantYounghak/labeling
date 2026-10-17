@@ -9,7 +9,7 @@ void configure_drogon()
             [](const drogon::HttpRequestPtr& req,
                drogon::FilterCallback&& stop,
                drogon::FilterChainCallback&& pass) {
-                if (req->path().rfind("/api/", 0) != 0 || req->method() != drogon::Options) {
+                if (req->method() != drogon::Options) {
                     pass();
                     return;
                 }
@@ -21,10 +21,7 @@ void configure_drogon()
                 stop(resp);
             })
         .registerPostHandlingAdvice(
-            [](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
-                if (req->path().rfind("/api/", 0) != 0) {
-                    return;
-                }
+            [](const drogon::HttpRequestPtr&, const drogon::HttpResponsePtr& resp) {
                 resp->addHeader("Access-Control-Allow-Origin", "*");
             });
 }

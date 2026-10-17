@@ -6,7 +6,7 @@
 void upload_folder_api()
 {
     drogon::app().registerHandler(
-        "/api/upload-folder",
+        "/io/upload-folder",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = req->getJsonObject();
             const std::string path = body ? (*body)["path"].asString() : "";

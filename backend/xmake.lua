@@ -23,6 +23,7 @@ add_requires("soci", {
         odbc = true,
     }
 })
+add_requires("onnxruntime")
 
 target("backend")
     set_kind("binary")
@@ -32,7 +33,7 @@ target("backend")
     add_includedirs("include")
     add_linkdirs("lib")
     add_includedirs("lib")
-    add_packages("drogon", "opencv", "soci")
+    add_packages("drogon", "opencv", "soci", "onnxruntime")
     if is_plat("windows") then
         add_syslinks("ole32", "uuid", "shell32", "odbc32")
     end

@@ -8,7 +8,7 @@
 void upload_labeling_api()
 {
     drogon::app().registerHandler(
-        "/api/labeling",
+        "/labeling/upload",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = req->getJsonObject();
             Labeling labeling;
@@ -38,7 +38,7 @@ void upload_labeling_api()
 void update_labeling_api()
 {
     drogon::app().registerHandler(
-        "/api/labeling",
+        "/labeling/update",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = req->getJsonObject();
             Labeling labeling;

@@ -89,7 +89,7 @@ export function formatDate(iso: string): string {
 }
 
 export async function uploadFolderApi(currentPath: string): Promise<string> {
-  const res = await fetch('/api/upload-folder', {
+  const res = await fetch('/io/upload-folder', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: currentPath }),
@@ -102,7 +102,7 @@ export async function uploadFolderApi(currentPath: string): Promise<string> {
 }
 
 export async function createProjectApi(project: Project): Promise<string> {
-  const res = await fetch('/api/projects', {
+  const res = await fetch('/project/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -123,7 +123,7 @@ export async function createProjectApi(project: Project): Promise<string> {
 }
 
 export async function createLabelingApi(project: Project): Promise<void> {
-  const res = await fetch('/api/labeling', {
+  const res = await fetch('/labeling/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

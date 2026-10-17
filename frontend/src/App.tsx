@@ -458,6 +458,9 @@ function App() {
                         tool={active.tool}
                         opacity={active.opacity}
                         labelClass={active.classes[labelClass] ?? active.classes[0] ?? null}
+                        classes={active.classes}
+                        onClassIndex={setLabelClass}
+                        onTool={(next) => patchActive({ tool: next })}
                       />
                     ) : (
                       <p className="viewer-note">이미지를 읽는 중…</p>

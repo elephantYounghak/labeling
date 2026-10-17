@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:18080',
+      '/io': 'http://127.0.0.1:18080',
+      '/project': 'http://127.0.0.1:18080',
+      '/labeling': 'http://127.0.0.1:18080',
+      '/ai': 'http://127.0.0.1:18080',
     },
   },
 })
