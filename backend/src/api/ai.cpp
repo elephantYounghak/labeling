@@ -21,3 +21,13 @@ void run_ai_api()
         },
         {drogon::Post});
 }
+
+void detect_ai_api()
+{
+    drogon::app().registerHandler(
+        "/ai/detect",
+        [](const drogon::HttpRequestPtr&, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            callback(drogon::HttpResponse::newHttpJsonResponse(Json::Value(Json::objectValue)));
+        },
+        {drogon::Post});
+}
