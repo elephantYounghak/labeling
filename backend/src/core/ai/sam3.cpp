@@ -287,17 +287,16 @@ SamOutput detect_sam(const SamInput& input)
         throw std::runtime_error("SAM 모델을 먼저 불러와야 합니다.");
     }
 
-    cv::Mat bgr = cv::imread(input.image_path, cv::IMREAD_COLOR);
-    if (bgr.empty()) {
-        throw std::runtime_error("이미지를 열지 못했습니다: " + input.image_path);
+    if (input.image.empty()) {
+        throw std::runtime_error("이미지가 없습니다.");
     }
     cv::Mat rgb;
-    cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
+    cv::cvtColor(input.image, rgb, cv::COLOR_BGR2RGB);
 
     Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     auto image_features = encode_image(*image_session, memory, rgb);
     auto language_features = encode_language(*language_session, memory);
-    const auto predictions = decode_click(*decoder_session, memory, image_features, language_features, input.x, input.y, bgr.cols, bgr.rows);
+    const auto predictions = decode_click(*decoder_session, memory, image_features, language_features, input.x, input.y, input.image.cols, input.image.rows);
 
     SamOutput detections;
     for (const Prediction& prediction : predictions) {

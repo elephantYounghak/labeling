@@ -9,7 +9,9 @@ import {
   saveFolderHandle,
   type ImageEntry,
 } from './folder'
+import { type DetectMode } from './detect'
 import { LabelStage } from './label'
+import { MODELS, loadModelApi, loadSelectedModelId, saveSelectedModelId } from './models'
 import {
   createLabelingApi,
   createProjectApi,
@@ -116,10 +118,16 @@ function App() {
   const [picking, setPicking] = useState(false)
   const [images, setImages] = useState<ImageEntry[]>([])
   const [imageUrl, setImageUrl] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagesBusy, setImagesBusy] = useState(false)
   const [imagesReady, setImagesReady] = useState(false)
   const [needsFolder, setNeedsFolder] = useState(false)
   const [labelClass, setLabelClass] = useState(0)
+  const [modelId, setModelId] = useState(loadSelectedModelId)
+  const [loadedModelId, setLoadedModelId] = useState('')
+  const [modelBusy, setModelBusy] = useState(false)
+  const [modelError, setModelError] = useState('')
+  const [detectMode, setDetectMode] = useState<DetectMode>('all')
   const pickedFolder = useRef<FileSystemDirectoryHandle | null>(null)
   const folderHandles = useRef(new Map<string, FileSystemDirectoryHandle>())
   const imageUrlRef = useRef('')
@@ -128,6 +136,8 @@ function App() {
   const activeId = route.projectId
   const imageIndex = route.imageNumber - 1
   const active = projects.find((project) => project.id === activeId) ?? null
+  const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0]
+  const modelReady = loadedModelId === selectedModel.id
 
   useEffect(() => {
     setLabelClass(0)
@@ -224,6 +234,7 @@ function App() {
       if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current)
       imageUrlRef.current = ''
       setImageUrl('')
+      setImageFile(null)
       return
     }
     let cancelled = false
@@ -233,6 +244,7 @@ function App() {
       if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current)
       imageUrlRef.current = url
       setImageUrl(url)
+      setImageFile(file)
     })
     return () => {
       cancelled = true
@@ -371,6 +383,26 @@ function App() {
     }
   }
 
+  function onSelectModel(id: string) {
+    setModelId(id)
+    saveSelectedModelId(id)
+    setModelError('')
+  }
+
+  async function onLoadModel() {
+    if (modelBusy) return
+    setModelBusy(true)
+    setModelError('')
+    try {
+      await loadModelApi(selectedModel)
+      setLoadedModelId(selectedModel.id)
+    } catch {
+      setModelError('백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 불러와 주세요.')
+    } finally {
+      setModelBusy(false)
+    }
+  }
+
   async function onOpenImages() {
     if (!active || imagesBusy) return
     setImagesBusy(true)
@@ -449,18 +481,24 @@ function App() {
                   <p className="viewer-note">이 폴더에서 이미지를 찾지 못했습니다.</p>
                 ) : (
                   <div className="viewer">
-                    {imageUrl && currentImage ? (
+                    {imageUrl && imageFile && currentImage ? (
                       <LabelStage
                         key={`${active.id}:${currentImage.name}`}
                         projectId={active.id}
                         imageName={currentImage.name}
                         imageUrl={imageUrl}
+                        imageFile={imageFile}
                         tool={active.tool}
                         opacity={active.opacity}
                         labelClass={active.classes[labelClass] ?? active.classes[0] ?? null}
                         classes={active.classes}
                         onClassIndex={setLabelClass}
                         onTool={(next) => patchActive({ tool: next })}
+                        modelId={selectedModel.id}
+                        modelName={selectedModel.name}
+                        folderPath={active.path}
+                        detectMode={detectMode}
+                        onDetectMode={setDetectMode}
                       />
                     ) : (
                       <p className="viewer-note">이미지를 읽는 중…</p>
@@ -508,6 +546,7 @@ function App() {
                         aria-label="라벨 도구"
                         value={active.tool}
                         onChange={(event) => patchActive({ tool: event.target.value as LabelTool })}
+                        disabled={detectMode === 'click'}
                       >
                         {TOOLS.map((item) => (
                           <option key={item.id} value={item.id}>
@@ -627,6 +666,34 @@ function App() {
           )}
         </div>
       </div>
+
+      <aside className="ai-panel" aria-label="모델">
+        <section className="model-panel">
+          <span className="model-label">모델</span>
+          <p className="model-current">{selectedModel.name}</p>
+          <select
+            aria-label="모델 선택"
+            value={selectedModel.id}
+            onChange={(event) => onSelectModel(event.target.value)}
+            disabled={modelBusy}
+          >
+            {MODELS.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="primary" onClick={onLoadModel} disabled={modelBusy}>
+            {modelBusy ? '불러오는 중…' : '불러오기'}
+          </button>
+          {modelReady ? <p className="model-status ready">불러옴</p> : null}
+          {modelError ? (
+            <p className="error" role="alert">
+              {modelError}
+            </p>
+          ) : null}
+        </section>
+      </aside>
 
       {modalOpen ? (
         <div className="overlay" onClick={closeCreate}>

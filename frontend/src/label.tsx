@@ -23,6 +23,7 @@ import {
   type Mark,
   type MarkPoint,
 } from './marks'
+import { detectApi, type DetectMode } from './detect'
 import type { LabelClass, LabelTool } from './projects'
 
 type Frame = FrameSize & { left: number; top: number }
@@ -73,22 +74,34 @@ export function LabelStage({
   projectId,
   imageName,
   imageUrl,
+  imageFile,
   tool,
   opacity,
   labelClass,
   classes,
   onClassIndex,
   onTool,
+  modelId,
+  modelName,
+  folderPath,
+  detectMode,
+  onDetectMode,
 }: {
   projectId: string
   imageName: string
   imageUrl: string
+  imageFile: File
   tool: LabelTool
   opacity: number
   labelClass: LabelClass | null
   classes: LabelClass[]
   onClassIndex: (index: number) => void
   onTool: (tool: LabelTool) => void
+  modelId: string
+  modelName: string
+  folderPath: string
+  detectMode: DetectMode
+  onDetectMode: (mode: DetectMode) => void
 }) {
   const imgRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -103,6 +116,11 @@ export function LabelStage({
   const [brushSize, setBrushSize] = useState(rememberedBrush)
   const [erasing, setErasing] = useState(rememberedErase)
   const [camera, setCamera] = useState<Camera>({ zoom: 1, x: 0, y: 0 })
+  const [awaitingClick, setAwaitingClick] = useState(false)
+  const [detectBusy, setDetectBusy] = useState(false)
+  const [detectNote, setDetectNote] = useState('')
+  const [detectFailed, setDetectFailed] = useState(false)
+  const [labelOpen, setLabelOpen] = useState(false)
   const [seenImage, setSeenImage] = useState(imageUrl)
   if (seenImage !== imageUrl) {
     setSeenImage(imageUrl)
@@ -127,6 +145,12 @@ export function LabelStage({
   const opacityRef = useRef(opacity)
   const cameraRef = useRef(camera)
   const finishRef = useRef<(points: MarkPoint[]) => void>(() => {})
+  const awaitingRef = useRef(false)
+  const detectModeRef = useRef(detectMode)
+  const pointerRef = useRef<MarkPoint | null>(null)
+  const labelMenuRef = useRef<HTMLDivElement>(null)
+  const labelOpenRef = useRef(false)
+  const detectBusyRef = useRef(false)
   const closedAt = useRef(0)
   const toolPrev = useRef(tool)
 
@@ -206,6 +230,10 @@ export function LabelStage({
     opacityRef.current = opacity
     cameraRef.current = camera
     finishRef.current = finishPolygon
+    awaitingRef.current = awaitingClick
+    detectModeRef.current = detectMode
+    pointerRef.current = pointer
+    detectBusyRef.current = detectBusy
     paintBrushLayer()
   })
 
@@ -260,6 +288,13 @@ export function LabelStage({
   }, [projectId, imageName, marks])
 
   useEffect(() => {
+    if (detectMode !== 'click') return
+    replaceDraft([])
+    setGestureNow(null)
+    beforeRef.current = null
+  }, [detectMode])
+
+  useEffect(() => {
     if (toolPrev.current === tool) return
     toolPrev.current = tool
     if (beforeRef.current) {
@@ -279,6 +314,17 @@ export function LabelStage({
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
       const key = event.key.toLowerCase()
       if (event.key === 'Escape') {
+        if (labelOpenRef.current) {
+          labelOpenRef.current = false
+          setLabelOpen(false)
+          return
+        }
+        if (awaitingRef.current) {
+          awaitingRef.current = false
+          setAwaitingClick(false)
+          setDetectNote('')
+          setDetectFailed(false)
+        }
         replaceDraft([])
         if (beforeRef.current) setMarksNow(beforeRef.current)
         beforeRef.current = null
@@ -286,6 +332,12 @@ export function LabelStage({
         select(null)
         return
       }
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && /^[1-9]$/.test(event.key)) {
+        const index = Number(event.key) - 1
+        if (index < classesRef.current.length) onClassRef.current(index)
+        return
+      }
+      if (detectModeRef.current === 'click') return
       if (event.key === 'Enter' && toolRef.current === 'polygon' && draftRef.current.length >= 3) {
         event.preventDefault()
         finishRef.current(draftRef.current)
@@ -312,11 +364,6 @@ export function LabelStage({
         removeMark(selectedRef.current)
         return
       }
-      if (!event.ctrlKey && !event.metaKey && !event.altKey && /^[1-9]$/.test(event.key)) {
-        const index = Number(event.key) - 1
-        if (index < classesRef.current.length) onClassRef.current(index)
-        return
-      }
       if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'b' || key === 'p' || key === 'm')) {
         onToolRef.current(key === 'b' ? 'bbox' : key === 'p' ? 'polygon' : 'brush')
         return
@@ -332,6 +379,17 @@ export function LabelStage({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  useEffect(() => {
+    if (!labelOpen) return
+    function onPointer(event: PointerEvent) {
+      if (labelMenuRef.current?.contains(event.target as Node)) return
+      labelOpenRef.current = false
+      setLabelOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointer)
+    return () => window.removeEventListener('pointerdown', onPointer)
+  }, [labelOpen])
 
   useEffect(() => {
     const node = stageRef.current
@@ -484,6 +542,68 @@ export function LabelStage({
     }
   }
 
+  function selectedWord() {
+    return (labelClass?.name ?? '').trim()
+  }
+
+  async function sendDetect(point?: MarkPoint | null) {
+    const word = (labelRef.current?.name ?? '').trim()
+    if (detectBusyRef.current) return
+    if (!word) {
+      setDetectFailed(true)
+      setDetectNote('라벨 이름을 먼저 선택해 주세요.')
+      return
+    }
+    if (!modelId) return
+    if (!point) {
+      setDetectFailed(true)
+      setDetectNote('이미지 위를 클릭해 주세요.')
+      return
+    }
+    detectBusyRef.current = true
+    setDetectBusy(true)
+    setDetectNote('')
+    setDetectFailed(false)
+    try {
+      await detectApi({
+        model: modelId,
+        name: modelName,
+        image: imageName,
+        path: folderPath,
+        tool,
+        mode: detectModeRef.current,
+        words: [word],
+        word,
+        x: point.x,
+        y: point.y,
+        pixelX: point.x < 0 ? -1 : natural.width > 0 ? Math.round(point.x * natural.width) : undefined,
+        pixelY: point.y < 0 ? -1 : natural.height > 0 ? Math.round(point.y * natural.height) : undefined,
+        width: natural.width || undefined,
+        height: natural.height || undefined,
+      }, imageFile)
+      setDetectNote('전송했습니다.')
+    } catch (error) {
+      setDetectFailed(true)
+      setDetectNote(
+        error instanceof Error && error.message === '검출 API가 실패했습니다.'
+          ? error.message
+          : '백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 검출해 주세요.',
+      )
+    } finally {
+      detectBusyRef.current = false
+      setDetectBusy(false)
+    }
+  }
+
+  function onDetect() {
+    if (detectBusy) return
+    if (detectModeRef.current === 'all') {
+      void sendDetect({ x: -1, y: -1 })
+      return
+    }
+    void sendDetect(pointerRef.current)
+  }
+
   function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return
     if (performance.now() - closedAt.current < 280) return
@@ -492,6 +612,11 @@ export function LabelStage({
     if (event.altKey) event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     setPointer(point)
+    pointerRef.current = point
+    if (detectModeRef.current === 'click') {
+      void sendDetect(point)
+      return
+    }
     const size = frameRef.current
     const marksNow = marksRef.current
     const activeTool = toolRef.current
@@ -693,6 +818,7 @@ export function LabelStage({
 
   function onContextMenu(event: MouseEvent<SVGSVGElement>) {
     event.preventDefault()
+    if (detectModeRef.current === 'click') return
     if (tool === 'polygon' && draftRef.current.length > 0) {
       replaceDraft(draftRef.current.slice(0, -1))
       return
@@ -709,13 +835,14 @@ export function LabelStage({
   }
 
   function onDoubleClick() {
-    if (tool !== 'polygon') return
+    if (detectModeRef.current === 'click' || tool !== 'polygon') return
     const points = draftRef.current
     if (points.length >= 4) finishPolygon(points.slice(0, -1))
     else if (points.length >= 3) finishPolygon(points)
   }
 
   const draftColor = labelClass?.color ?? '#ff6d2d'
+  const classIndex = labelClass ? Math.max(0, classes.indexOf(labelClass)) : 0
   const selected = marks.find((mark) => mark.id === selectedId) ?? null
   const closing =
     tool === 'polygon' && draft.length >= 3 && pointer !== null && frame.width > 0 && pixelDistance(pointer, draft[0], frame) <= 12
@@ -730,11 +857,11 @@ export function LabelStage({
   const hoverHandle =
     tool === 'bbox' && selectedBox && pointer && gesture?.kind !== 'bbox' ? hitBoxHandle(selectedBox, pointer, frame) : null
   const drawing = gesture?.kind === 'bbox' || (tool === 'polygon' && draft.length > 0)
-  let cursor = tool === 'brush' ? 'none' : 'crosshair'
-  if (gesture?.kind === 'resize') cursor = RESIZE_CURSOR[gesture.handle]
-  else if (gesture?.kind === 'move' || gesture?.kind === 'vertex') cursor = 'grabbing'
-  else if (!drawing && hoverHandle) cursor = RESIZE_CURSOR[hoverHandle]
-  else if (!drawing && tool !== 'brush' && pointer && hitMark(marks, pointer, frame)) cursor = 'move'
+  let cursor = detectMode === 'click' || tool !== 'brush' ? 'crosshair' : 'none'
+  if (detectMode !== 'click' && gesture?.kind === 'resize') cursor = RESIZE_CURSOR[gesture.handle]
+  else if (detectMode !== 'click' && (gesture?.kind === 'move' || gesture?.kind === 'vertex')) cursor = 'grabbing'
+  else if (detectMode !== 'click' && !drawing && hoverHandle) cursor = RESIZE_CURSOR[hoverHandle]
+  else if (detectMode !== 'click' && !drawing && tool !== 'brush' && pointer && hitMark(marks, pointer, frame)) cursor = 'move'
 
   const sizeBox =
     gesture?.kind === 'bbox'
@@ -772,18 +899,56 @@ export function LabelStage({
               role="radio"
               aria-checked={tool === item.id}
               title={`${item.label} (${item.key})`}
+              disabled={detectMode === 'click'}
               onClick={() => onTool(item.id)}
             >
               {item.label}
             </button>
           ))}
         </div>
-        {labelClass?.name ? (
-          <span className="active-class">
-            <i style={{ background: labelClass.color }} />
-            {labelClass.name}
-          </span>
-        ) : null}
+        <div className="class-pick" ref={labelMenuRef}>
+          <span className="detect-label">라벨</span>
+          {classes.length === 0 ? (
+            <p className="detect-note">종류를 먼저 추가해 주세요</p>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="class-select"
+                aria-haspopup="listbox"
+                aria-expanded={labelOpen}
+                onClick={() => {
+                  const next = !labelOpenRef.current
+                  labelOpenRef.current = next
+                  setLabelOpen(next)
+                }}
+              >
+                <i style={{ background: labelClass?.color ?? classes[classIndex]?.color ?? '#ff6d2d' }} />
+                <span>{(labelClass ?? classes[classIndex])?.name.trim() || '이름 없음'}</span>
+              </button>
+              {labelOpen ? (
+                <div className="class-menu" role="listbox" aria-label="라벨 이름">
+                  {classes.map((item, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      role="option"
+                      aria-selected={index === classIndex}
+                      onClick={() => {
+                        onClassIndex(index)
+                        labelOpenRef.current = false
+                        setLabelOpen(false)
+                      }}
+                    >
+                      <i style={{ background: item.color }} />
+                      <span>{item.name.trim() || '이름 없음'}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
         {tool === 'brush' ? (
           <>
             <label className="brush-size">
@@ -797,19 +962,50 @@ export function LabelStage({
                 style={{ ['--fill' as string]: `${((brushSize - 4) / 68) * 100}%` }}
                 onChange={(event) => changeBrush(Number(event.target.value))}
                 aria-label="브러시 크기"
+                disabled={detectMode === 'click'}
               />
             </label>
-            <button type="button" className={erasing ? 'mini active' : 'mini'} aria-pressed={erasing} onClick={toggleErase}>
+            <button type="button" className={erasing ? 'mini active' : 'mini'} aria-pressed={erasing} onClick={toggleErase} disabled={detectMode === 'click'}>
               지우개
             </button>
           </>
         ) : null}
-        <button type="button" className="mini" onClick={undo}>
+        <button type="button" className="mini" onClick={undo} disabled={detectMode === 'click'}>
           되돌리기
         </button>
-        <button type="button" className="mini" onClick={redo}>
+        <button type="button" className="mini" onClick={redo} disabled={detectMode === 'click'}>
           다시
         </button>
+        <div className="detect-block">
+          <span className="detect-label">검출</span>
+          <div className="seg" role="radiogroup" aria-label="검출 범위">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={detectMode === 'all'}
+              onClick={() => onDetectMode('all')}
+            >
+              전체
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={detectMode === 'click'}
+              onClick={() => onDetectMode('click')}
+            >
+              클릭
+            </button>
+          </div>
+          <button
+            type="button"
+            className="mini"
+            onClick={onDetect}
+            disabled={detectBusy || !modelId || selectedWord().length === 0}
+          >
+            {detectBusy ? '검출 중…' : '검출'}
+          </button>
+          {detectNote ? <p className={detectFailed ? 'detect-note failed' : 'detect-note'}>{detectNote}</p> : null}
+        </div>
       </div>
       <div className="label-main">
       <div className="stage" ref={stageRef}>

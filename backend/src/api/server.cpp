@@ -5,6 +5,7 @@
 void configure_drogon()
 {
     drogon::app()
+        .setClientMaxBodySize(64 * 1024 * 1024)
         .registerPreRoutingAdvice(
             [](const drogon::HttpRequestPtr& req,
                drogon::FilterCallback&& stop,

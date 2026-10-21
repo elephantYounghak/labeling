@@ -41,6 +41,7 @@ add_requires("drogon", {
         sqlite3 = false,
     }
 })
+add_requireconfs("**.trantor", {override = true, version = "v1.5.28"})
 add_requires("soci", {
     configs = {
         odbc = true,
@@ -61,7 +62,7 @@ add_requires("cuda 12.8.1", {
     }
 })
 add_requires("cudnn 9.24", {system = true})
-add_requires("onnxruntime", {
+add_requires("onnxruntime 1.22.1", {
     configs = {
         gpu = true,
         cuda_version = "12",
@@ -69,6 +70,7 @@ add_requires("onnxruntime", {
 })
 add_requires("opencv", {
     configs = {
+        shared = true, -- 무슨 옵션인지 분석 
         ffmpeg = false,
         cuda = true,
         opengl = false,

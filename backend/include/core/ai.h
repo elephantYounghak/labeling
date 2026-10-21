@@ -1,5 +1,7 @@
 #pragma once
 
+#include <opencv2/core/mat.hpp>
+
 #include <string>
 #include <vector>
 
@@ -11,7 +13,7 @@ struct SamPoint
 
 struct SamInput
 {
-    std::string image_path;
+    cv::Mat image;
     float x = 0;
     float y = 0;
     std::string tool;
@@ -40,3 +42,6 @@ struct SamOutput
 
 void load_sam();
 SamOutput detect_sam(const SamInput& input);
+
+std::string load_rfdetr();
+std::string detect_rfdetr();

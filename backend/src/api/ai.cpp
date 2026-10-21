@@ -1,13 +1,40 @@
 #include "api/ai.h"
 
+#include "core/ai.h"
+#include "utils/image.h"
+
+#include <drogon/MultiPart.h>
 #include <drogon/drogon.h>
+#include <exception>
+#include <string>
 
 void load_ai_api()
 {
     drogon::app().registerHandler(
         "/ai/load",
-        [](const drogon::HttpRequestPtr&, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-            callback(drogon::HttpResponse::newHttpJsonResponse(Json::Value(Json::objectValue)));
+        [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            const auto body = req->getJsonObject();
+            const std::string model = body ? (*body)["model"].asString() : "";
+
+            Json::Value result(Json::objectValue);
+            try {
+                if (model == "sam3") {
+                    load_sam();
+                } else if (model == "rfdetr") {
+                    result["test"] = load_rfdetr();
+                } else {
+                    throw std::runtime_error("지원하지 않는 모델입니다.");
+                }
+            } catch (const std::exception& error) {
+                Json::Value failed;
+                failed["error"] = error.what();
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(failed);
+                resp->setStatusCode(drogon::k500InternalServerError);
+                callback(resp);
+                return;
+            }
+
+            callback(drogon::HttpResponse::newHttpJsonResponse(result));
         },
         {drogon::Post});
 }
@@ -26,8 +53,46 @@ void detect_ai_api()
 {
     drogon::app().registerHandler(
         "/ai/detect",
-        [](const drogon::HttpRequestPtr&, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-            callback(drogon::HttpResponse::newHttpJsonResponse(Json::Value(Json::objectValue)));
+        [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            drogon::MultiPartParser parser;
+            if (parser.parse(req) != 0 || parser.getFiles().empty()) {
+                Json::Value failed;
+                failed["error"] = "이미지 파일이 없습니다.";
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(failed);
+                resp->setStatusCode(drogon::k400BadRequest);
+                callback(resp);
+                return;
+            }
+
+            const auto& file = parser.getFiles().front();
+            Json::Value result(Json::objectValue);
+            result["model"] = parser.getParameter<std::string>("model");
+            result["word"] = parser.getParameter<std::string>("word");
+            result["x"] = parser.getParameter<double>("x");
+            result["y"] = parser.getParameter<double>("y");
+            result["bytes"] = static_cast<Json::UInt64>(file.fileLength());
+            try {
+                if (result["model"] == "sam3") {
+                    SamInput input;
+                    input.image = image_from_bytes(file.fileContent());
+                    input.x = static_cast<float>(result["x"].asFloat());
+                    input.y = static_cast<float>(result["y"].asFloat());
+                    input.tool = parser.getParameter<std::string>("tool");
+                    detect_sam(input);
+                } else if (result["model"] == "rfdetr") {
+                    detect_rfdetr();
+                } else {
+                    throw std::runtime_error("지원하지 않는 모델입니다.");
+                }
+            } catch (const std::exception& error) {
+                Json::Value failed;
+                failed["error"] = error.what();
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(failed);
+                resp->setStatusCode(drogon::k500InternalServerError);
+                callback(resp);
+                return;
+            }
+            callback(drogon::HttpResponse::newHttpJsonResponse(result));
         },
         {drogon::Post});
 }
