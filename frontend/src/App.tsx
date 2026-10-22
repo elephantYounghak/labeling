@@ -126,7 +126,6 @@ function App() {
   const [loadedModelIds, setLoadedModelIds] = useState<string[]>([])
   const [modelBusy, setModelBusy] = useState(false)
   const [modelError, setModelError] = useState('')
-  const [aiOn, setAiOn] = useState(false)
   const pickedFolder = useRef<FileSystemDirectoryHandle | null>(null)
   const folderHandles = useRef(new Map<string, FileSystemDirectoryHandle>())
   const imageUrlRef = useRef('')
@@ -498,8 +497,6 @@ function App() {
                         modelDescription={selectedModel.description}
                         modelReady={modelReady}
                         folderPath={active.path}
-                        aiOn={aiOn}
-                        onAiOn={setAiOn}
                       />
                     ) : (
                       <p className="viewer-note">이미지를 읽는 중…</p>

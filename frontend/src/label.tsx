@@ -86,8 +86,6 @@ export function LabelStage({
   modelDescription,
   modelReady,
   folderPath,
-  aiOn,
-  onAiOn,
 }: {
   projectId: string
   imageName: string
@@ -104,8 +102,6 @@ export function LabelStage({
   modelDescription: string
   modelReady: boolean
   folderPath: string
-  aiOn: boolean
-  onAiOn: (on: boolean) => void
 }) {
   const imgRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -148,7 +144,6 @@ export function LabelStage({
   const opacityRef = useRef(opacity)
   const cameraRef = useRef(camera)
   const finishRef = useRef<(points: MarkPoint[]) => void>(() => {})
-  const aiRef = useRef(aiOn)
   const labelMenuRef = useRef<HTMLDivElement>(null)
   const labelOpenRef = useRef(false)
   const detectBusyRef = useRef(false)
@@ -231,7 +226,6 @@ export function LabelStage({
     opacityRef.current = opacity
     cameraRef.current = camera
     finishRef.current = finishPolygon
-    aiRef.current = aiOn
     detectBusyRef.current = detectBusy
     paintBrushLayer()
   })
@@ -285,14 +279,6 @@ export function LabelStage({
   useEffect(() => {
     saveMarks(projectId, imageName, marks)
   }, [projectId, imageName, marks])
-
-  useEffect(() => {
-    if (!aiOn) return
-    replaceDraft([])
-    if (beforeRef.current) setMarksNow(beforeRef.current)
-    beforeRef.current = null
-    setGestureNow(null)
-  }, [aiOn])
 
   useEffect(() => {
     if (toolPrev.current === tool) return
@@ -361,7 +347,6 @@ export function LabelStage({
         onToolRef.current(key === 'b' ? 'bbox' : key === 'p' ? 'polygon' : 'brush')
         return
       }
-      if (aiRef.current) return
       if (toolRef.current === 'brush' && !event.ctrlKey && !event.metaKey && key === 'e') {
         toggleErase()
         return
@@ -597,13 +582,15 @@ export function LabelStage({
     if (performance.now() - closedAt.current < 280) return
     const point = eventPoint(event)
     if (!point) return
-    if (event.altKey) event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setPointer(point)
-    if (aiRef.current) {
+    if (event.altKey) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setPointer(point)
       void sendDetect(point)
       return
     }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setPointer(point)
     const size = frameRef.current
     const marksNow = marksRef.current
     const activeTool = toolRef.current
@@ -620,7 +607,7 @@ export function LabelStage({
 
     if (activeTool === 'polygon') {
       const selected = marksNow.find((mark) => mark.id === selectedRef.current && mark.tool === 'polygon')
-      if (selected && !event.altKey) {
+      if (selected) {
         const vertex = hitVertex(selected.points, point, size)
         if (vertex >= 0) {
           beginHistory()
@@ -628,14 +615,12 @@ export function LabelStage({
           return
         }
       }
-      if (!event.altKey) {
-        const hit = hitMark(marksNow, point, size)
-        if (hit) {
-          select(hit.id)
-          beginHistory()
-          setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
-          return
-        }
+      const hit = hitMark(marksNow, point, size)
+      if (hit) {
+        select(hit.id)
+        beginHistory()
+        setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
+        return
       }
       if (!labelRef.current?.name) return
       replaceDraft([point])
@@ -645,7 +630,7 @@ export function LabelStage({
 
     if (activeTool === 'bbox') {
       const selected = marksNow.find((mark) => mark.id === selectedRef.current)
-      if (selected?.tool === 'bbox' && !event.altKey) {
+      if (selected?.tool === 'bbox') {
         const box = boxOf(selected.points)
         const handle = box ? hitBoxHandle(box, point, size) : null
         if (box && handle) {
@@ -654,14 +639,12 @@ export function LabelStage({
           return
         }
       }
-      if (!event.altKey) {
-        const hit = hitMark(marksNow, point, size)
-        if (hit) {
-          select(hit.id)
-          beginHistory()
-          setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
-          return
-        }
+      const hit = hitMark(marksNow, point, size)
+      if (hit) {
+        select(hit.id)
+        beginHistory()
+        setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
+        return
       }
       if (!labelRef.current?.name) return
       select(null)
@@ -678,7 +661,7 @@ export function LabelStage({
       return
     }
     const selectedBrush = marksNow.find((mark) => mark.id === selectedRef.current && mark.tool === 'brush')
-    if (selectedBrush && !event.altKey && hitMark([selectedBrush], point, size)) {
+    if (selectedBrush && hitMark([selectedBrush], point, size)) {
       beginHistory()
       setGestureNow({ kind: 'move', id: selectedBrush.id, origin: point, base: selectedBrush.points.map((item) => ({ ...item })) })
       return
@@ -805,7 +788,6 @@ export function LabelStage({
 
   function onContextMenu(event: MouseEvent<SVGSVGElement>) {
     event.preventDefault()
-    if (aiRef.current) return
     if (tool === 'polygon' && draftRef.current.length > 0) {
       replaceDraft(draftRef.current.slice(0, -1))
       return
@@ -822,7 +804,7 @@ export function LabelStage({
   }
 
   function onDoubleClick() {
-    if (aiRef.current || tool !== 'polygon') return
+    if (tool !== 'polygon') return
     const points = draftRef.current
     if (points.length >= 4) finishPolygon(points.slice(0, -1))
     else if (points.length >= 3) finishPolygon(points)
@@ -845,11 +827,11 @@ export function LabelStage({
     tool === 'bbox' && selectedBox && pointer && gesture?.kind !== 'bbox' ? hitBoxHandle(selectedBox, pointer, frame) : null
   const drawing = gesture?.kind === 'bbox' || (tool === 'polygon' && draft.length > 0)
   let cursor = tool !== 'brush' ? 'crosshair' : 'none'
-  if (aiOn) cursor = detectBusy ? 'progress' : 'crosshair'
-  else if (gesture?.kind === 'resize') cursor = RESIZE_CURSOR[gesture.handle]
+  if (gesture?.kind === 'resize') cursor = RESIZE_CURSOR[gesture.handle]
   else if (gesture?.kind === 'move' || gesture?.kind === 'vertex') cursor = 'grabbing'
   else if (!drawing && hoverHandle) cursor = RESIZE_CURSOR[hoverHandle]
   else if (!drawing && tool !== 'brush' && pointer && hitMark(marks, pointer, frame)) cursor = 'move'
+  else if (detectBusy) cursor = 'progress'
 
   const sizeBox =
     gesture?.kind === 'bbox'
@@ -949,10 +931,9 @@ export function LabelStage({
                 style={{ ['--fill' as string]: `${((brushSize - 4) / 68) * 100}%` }}
                 onChange={(event) => changeBrush(Number(event.target.value))}
                 aria-label="브러시 크기"
-                disabled={aiOn}
               />
             </label>
-            <button type="button" className={erasing ? 'mini active' : 'mini'} aria-pressed={erasing} onClick={toggleErase} disabled={aiOn}>
+            <button type="button" className={erasing ? 'mini active' : 'mini'} aria-pressed={erasing} onClick={toggleErase}>
               지우개
             </button>
           </>
@@ -965,22 +946,14 @@ export function LabelStage({
         </button>
         <div className="detect-block">
           <span className="detect-label">AI</span>
-          <div className="seg" role="radiogroup" aria-label="AI 모드">
-            <button type="button" role="radio" aria-checked={aiOn} onClick={() => onAiOn(true)}>
-              ON
-            </button>
-            <button type="button" role="radio" aria-checked={!aiOn} onClick={() => onAiOn(false)}>
-              OFF
-            </button>
-          </div>
           <p className="detect-note">
             <strong>{modelName}</strong>
             {modelReady ? '' : ' (불러오지 않음)'}
             <br />
-            {aiOn ? modelDescription : '일반 라벨링 모드입니다.'}
+            {modelDescription}
           </p>
-          {aiOn && detectBusy ? <p className="detect-note">검출 중…</p> : null}
-          {aiOn && !detectBusy && detectNote ? (
+          {detectBusy ? <p className="detect-note">검출 중…</p> : null}
+          {!detectBusy && detectNote ? (
             <p className={detectFailed ? 'detect-note failed' : 'detect-note'}>{detectNote}</p>
           ) : null}
         </div>
@@ -1125,7 +1098,7 @@ export function LabelStage({
                   {Math.max(1, Math.round(sizeBox.w * natural.width))} × {Math.max(1, Math.round(sizeBox.h * natural.height))}
                 </span>
               ) : null}
-              {!aiOn && tool === 'brush' && pointer ? (
+              {tool === 'brush' && pointer ? (
                 <span
                   className={erasing ? 'brush-cursor erasing' : 'brush-cursor'}
                   style={{

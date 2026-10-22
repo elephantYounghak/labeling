@@ -11,13 +11,13 @@ export const MODELS: AiModel[] = [
   {
     id: 'sam3_point',
     name: 'SAM3 Point',
-    description: '클릭한 위치의 물체 하나를 찾아 그립니다.',
+    description: 'Alt+클릭한 위치의 물체 하나를 찾아 그립니다.',
     files: ['vision_encoder_q4f16.onnx', 'prompt_encoder_mask_decoder_int8.onnx'],
   },
   {
     id: 'sam3_text',
     name: 'SAM3 Text',
-    description: '이미지를 클릭하면 이미지 전체에서 물체를 모두 찾아 그립니다.',
+    description: 'Alt+클릭하면 이미지 전체에서 물체를 모두 찾아 그립니다.',
     files: ['sam3_image_encoder.onnx', 'sam3_language_encoder.onnx', 'sam3_decoder.onnx'],
   },
   {
