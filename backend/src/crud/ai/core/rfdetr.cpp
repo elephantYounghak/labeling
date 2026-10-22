@@ -1,4 +1,4 @@
-#include "core/ai.h"
+#include "crud/ai/core.h"
 
 std::string load_rfdetr()
 {

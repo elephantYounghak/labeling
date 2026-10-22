@@ -1,4 +1,4 @@
-#include "core/sam3.h"
+#include "crud/ai/core/sam3.h"
 #include "utils/image.h"
 
 #include <opencv2/opencv.hpp>
@@ -169,9 +169,7 @@ SamOutput to_output(const std::vector<Prediction>& predictions, const std::strin
     return output;
 }
 
-}  // namespace sam3
-
-SamInput make_sam_input(std::string_view bytes, float x, float y, const std::string& tool)
+SamInput make_input(std::string_view bytes, float x, float y, const std::string& tool)
 {
     SamInput input;
     input.image = image_from_bytes(bytes);
@@ -181,7 +179,7 @@ SamInput make_sam_input(std::string_view bytes, float x, float y, const std::str
     return input;
 }
 
-Json::Value sam_output_json(const SamOutput& output)
+Json::Value output_json(const SamOutput& output)
 {
     Json::Value result(Json::objectValue);
     Json::Value boxes(Json::arrayValue);
@@ -197,10 +195,10 @@ Json::Value sam_output_json(const SamOutput& output)
     Json::Value masks(Json::arrayValue);
     for (const SamMask& mask : output.masks) {
         Json::Value points(Json::arrayValue);
-        for (const SamPoint& point : mask.points) {
+        for (const SamPoint& item : mask.points) {
             Json::Value row(Json::objectValue);
-            row["x"] = point.x;
-            row["y"] = point.y;
+            row["x"] = item.x;
+            row["y"] = item.y;
             points.append(std::move(row));
         }
         Json::Value item(Json::objectValue);
@@ -212,3 +210,5 @@ Json::Value sam_output_json(const SamOutput& output)
     result["masks"] = std::move(masks);
     return result;
 }
+
+}  // namespace sam3

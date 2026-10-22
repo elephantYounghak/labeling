@@ -1,8 +1,8 @@
-#include "api/ai.h"
-#include "api/io.h"
-#include "api/labeling.h"
-#include "api/project.h"
-#include "api/server.h"
+#include "crud/ai/api.h"
+#include "crud/io/api.h"
+#include "crud/labeling/api.h"
+#include "crud/project/api.h"
+#include "utils/server.h"
 
 #include <drogon/drogon.h>
 #include <iostream>

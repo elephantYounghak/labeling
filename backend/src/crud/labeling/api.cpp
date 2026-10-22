@@ -1,6 +1,6 @@
-#include "api/labeling.h"
+#include "crud/labeling/api.h"
 
-#include "models/labeling.h"
+#include "crud/labeling/model.h"
 
 #include <drogon/drogon.h>
 #include <exception>

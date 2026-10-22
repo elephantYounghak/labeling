@@ -1,6 +1,6 @@
-#include "models/labeling.h"
+#include "crud/labeling/model.h"
 
-#include "db/database.h"
+#include "utils/database.h"
 
 void upload_labeling(Labeling& labeling)
 {

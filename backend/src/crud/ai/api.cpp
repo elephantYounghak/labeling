@@ -1,6 +1,6 @@
-#include "api/ai.h"
+#include "crud/ai/api.h"
 
-#include "core/ai.h"
+#include "crud/ai/core.h"
 
 #include <drogon/MultiPart.h>
 #include <drogon/drogon.h>

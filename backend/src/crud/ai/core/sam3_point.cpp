@@ -1,15 +1,18 @@
-#include "core/sam3.h"
+#include "crud/ai/core/sam3_point.h"
+#include "crud/ai/core/sam3.h"
 #include "utils/image.h"
 
 #include <opencv2/opencv.hpp>
 
 #include <array>
+#include <filesystem>
+#include <memory>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
-using namespace sam3;
 
-namespace {
+namespace sam3_point {
+using namespace sam3;
 
 const fs::path kModelDir = "backend/data/models/sam3_point";
 
@@ -31,7 +34,7 @@ std::vector<Ort::Value> encode_image(Ort::Session& session, const Ort::MemoryInf
     return session.Run(Ort::RunOptions{nullptr}, input_names, &input, 1, output_names, 3);
 }
 
-std::vector<Prediction> decode_point(
+std::vector<Prediction> decode(
     Ort::Session& session,
     const Ort::MemoryInfo& memory,
     std::vector<Ort::Value>& features,
@@ -40,7 +43,7 @@ std::vector<Prediction> decode_point(
     int image_width,
     int image_height)
 {
-    std::array<float, 2> point = {click_x * kImageSize, click_y * kImageSize};
+    std::array<float, 2> clicked = {click_x * kImageSize, click_y * kImageSize};
     std::array<int64_t, 1> label = {1};
     std::array<float, 4> no_box{};
     const int64_t point_shape[] = {1, 1, 1, 2};
@@ -48,7 +51,7 @@ std::vector<Prediction> decode_point(
     const int64_t box_shape[] = {1, 0, 4};
 
     std::vector<Ort::Value> inputs;
-    inputs.push_back(Ort::Value::CreateTensor<float>(memory, point.data(), point.size(), point_shape, 4));
+    inputs.push_back(Ort::Value::CreateTensor<float>(memory, clicked.data(), clicked.size(), point_shape, 4));
     inputs.push_back(Ort::Value::CreateTensor<int64_t>(memory, label.data(), label.size(), label_shape, 3));
     inputs.push_back(Ort::Value::CreateTensor<float>(memory, no_box.data(), 0, box_shape, 3));
     inputs.push_back(view_float(memory, features[0]));
@@ -105,15 +108,13 @@ std::vector<Prediction> decode_point(
     return {std::move(prediction)};
 }
 
-}  // namespace
-
-void load_sam_point()
+void load()
 {
     image_session = open_session(kModelDir / "vision_encoder_q4f16.onnx", gpu_options());
     prompt_session = open_session(kModelDir / "prompt_encoder_mask_decoder_int8.onnx", cpu_options());
 }
 
-SamOutput detect_sam_point(const SamInput& input)
+SamOutput detect(const SamInput& input)
 {
     const std::string tool = normalized_tool(input.tool);
     if (!image_session || !prompt_session) {
@@ -124,6 +125,8 @@ SamOutput detect_sam_point(const SamInput& input)
 
     Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     auto features = encode_image(*image_session, memory, rgb);
-    const auto predictions = decode_point(*prompt_session, memory, features, input.x, input.y, size.width, size.height);
+    const auto predictions = decode(*prompt_session, memory, features, input.x, input.y, size.width, size.height);
     return to_output(predictions, tool);
 }
+
+}  // namespace sam3_point

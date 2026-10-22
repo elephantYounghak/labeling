@@ -1,6 +1,6 @@
-#include "models/project.h"
+#include "crud/project/model.h"
 
-#include "db/database.h"
+#include "utils/database.h"
 
 void upload_project(Project& project)
 {

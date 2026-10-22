@@ -1,13 +1,19 @@
-#include "core/sam3.h"
+#include "crud/ai/core/sam3_text.h"
+#include "crud/ai/core/sam3.h"
 #include "utils/image.h"
 
+#include <opencv2/opencv.hpp>
+
 #include <array>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
-using namespace sam3;
 
-namespace {
+namespace sam3_text {
+using namespace sam3;
 
 constexpr int kContextLength = 32;
 constexpr int32_t kSot = 49406;
@@ -130,16 +136,14 @@ std::vector<Prediction> decode_all(
     return predictions;
 }
 
-}  // namespace
-
-void load_sam_text()
+void load()
 {
     image_session = open_session(kModelDir / "sam3_image_encoder.onnx", gpu_options());
     language_session = open_session(kModelDir / "sam3_language_encoder.onnx", cpu_options());
     decoder_session = open_session(kModelDir / "sam3_decoder.onnx", cpu_options());
 }
 
-SamOutput detect_sam_text(const SamInput& input)
+SamOutput detect(const SamInput& input)
 {
     const std::string tool = normalized_tool(input.tool);
     if (!image_session || !language_session || !decoder_session) {
@@ -154,3 +158,5 @@ SamOutput detect_sam_text(const SamInput& input)
     const auto predictions = decode_all(*decoder_session, memory, image_features, language_features, size.width, size.height);
     return to_output(predictions, tool);
 }
+
+}  // namespace sam3_text

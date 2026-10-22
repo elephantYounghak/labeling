@@ -1,6 +1,6 @@
-#include "api/project.h"
+#include "crud/project/api.h"
 
-#include "models/project.h"
+#include "crud/project/model.h"
 
 #include <drogon/drogon.h>
 #include <exception>
