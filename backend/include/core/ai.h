@@ -1,8 +1,10 @@
 #pragma once
 
+#include <json/json.h>
 #include <opencv2/core/mat.hpp>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct SamPoint
@@ -40,8 +42,12 @@ struct SamOutput
     std::vector<SamMask> masks;
 };
 
-void load_sam();
-SamOutput detect_sam(const SamInput& input);
+void load_sam_text();
+void load_sam_point();
+SamInput make_sam_input(std::string_view bytes, float x, float y, const std::string& tool);
+SamOutput detect_sam_text(const SamInput& input);
+SamOutput detect_sam_point(const SamInput& input);
+Json::Value sam_output_json(const SamOutput& output);
 
 std::string load_rfdetr();
 std::string detect_rfdetr();

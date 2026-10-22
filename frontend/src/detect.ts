@@ -1,21 +1,16 @@
 import { boxPoints, clamp01, type Mark, type MarkPoint } from './marks'
 import type { LabelTool } from './projects'
 
-export type DetectMode = 'all' | 'click'
-
 export type DetectRequest = {
   model: string
   name: string
   image: string
   path: string
   tool: LabelTool
-  mode: DetectMode
   words: string[]
   word?: string
   x?: number
   y?: number
-  pixelX?: number
-  pixelY?: number
   width?: number
   height?: number
 }
@@ -160,13 +155,10 @@ export async function detectApi(body: DetectRequest, file: File): Promise<unknow
   form.append('name', body.name)
   form.append('path', body.path)
   form.append('tool', body.tool)
-  form.append('mode', body.mode)
   form.append('words', JSON.stringify(body.words))
   if (body.word) form.append('word', body.word)
   if (body.x !== undefined) form.append('x', String(body.x))
   if (body.y !== undefined) form.append('y', String(body.y))
-  if (body.pixelX !== undefined) form.append('pixelX', String(body.pixelX))
-  if (body.pixelY !== undefined) form.append('pixelY', String(body.pixelY))
   if (body.width !== undefined) form.append('width', String(body.width))
   if (body.height !== undefined) form.append('height', String(body.height))
   form.append('image', file, file.name)

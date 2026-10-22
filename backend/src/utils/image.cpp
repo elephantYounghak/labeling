@@ -18,3 +18,11 @@ cv::Mat image_from_bytes(std::string_view bytes)
     }
     return image;
 }
+
+ImageSize image_size(const cv::Mat& image)
+{
+    if (image.empty()) {
+        throw std::runtime_error("이미지가 없습니다.");
+    }
+    return {image.cols, image.rows};
+}

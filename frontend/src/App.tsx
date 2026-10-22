@@ -9,7 +9,6 @@ import {
   saveFolderHandle,
   type ImageEntry,
 } from './folder'
-import { type DetectMode } from './detect'
 import { LabelStage } from './label'
 import { MODELS, loadModelApi, loadSelectedModelId, saveSelectedModelId } from './models'
 import {
@@ -124,10 +123,10 @@ function App() {
   const [needsFolder, setNeedsFolder] = useState(false)
   const [labelClass, setLabelClass] = useState(0)
   const [modelId, setModelId] = useState(loadSelectedModelId)
-  const [loadedModelId, setLoadedModelId] = useState('')
+  const [loadedModelIds, setLoadedModelIds] = useState<string[]>([])
   const [modelBusy, setModelBusy] = useState(false)
   const [modelError, setModelError] = useState('')
-  const [detectMode, setDetectMode] = useState<DetectMode>('all')
+  const [aiOn, setAiOn] = useState(false)
   const pickedFolder = useRef<FileSystemDirectoryHandle | null>(null)
   const folderHandles = useRef(new Map<string, FileSystemDirectoryHandle>())
   const imageUrlRef = useRef('')
@@ -137,7 +136,7 @@ function App() {
   const imageIndex = route.imageNumber - 1
   const active = projects.find((project) => project.id === activeId) ?? null
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0]
-  const modelReady = loadedModelId === selectedModel.id
+  const modelReady = loadedModelIds.includes(selectedModel.id)
 
   useEffect(() => {
     setLabelClass(0)
@@ -395,7 +394,7 @@ function App() {
     setModelError('')
     try {
       await loadModelApi(selectedModel)
-      setLoadedModelId(selectedModel.id)
+      setLoadedModelIds((ids) => (ids.includes(selectedModel.id) ? ids : [...ids, selectedModel.id]))
     } catch {
       setModelError('백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 불러와 주세요.')
     } finally {
@@ -496,9 +495,11 @@ function App() {
                         onTool={(next) => patchActive({ tool: next })}
                         modelId={selectedModel.id}
                         modelName={selectedModel.name}
+                        modelDescription={selectedModel.description}
+                        modelReady={modelReady}
                         folderPath={active.path}
-                        detectMode={detectMode}
-                        onDetectMode={setDetectMode}
+                        aiOn={aiOn}
+                        onAiOn={setAiOn}
                       />
                     ) : (
                       <p className="viewer-note">이미지를 읽는 중…</p>
@@ -546,7 +547,6 @@ function App() {
                         aria-label="라벨 도구"
                         value={active.tool}
                         onChange={(event) => patchActive({ tool: event.target.value as LabelTool })}
-                        disabled={detectMode === 'click'}
                       >
                         {TOOLS.map((item) => (
                           <option key={item.id} value={item.id}>

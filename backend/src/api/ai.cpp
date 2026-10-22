@@ -1,7 +1,6 @@
 #include "api/ai.h"
 
 #include "core/ai.h"
-#include "utils/image.h"
 
 #include <drogon/MultiPart.h>
 #include <drogon/drogon.h>
@@ -18,8 +17,10 @@ void load_ai_api()
 
             Json::Value result(Json::objectValue);
             try {
-                if (model == "sam3") {
-                    load_sam();
+                if (model == "sam3_text") {
+                    load_sam_text();
+                } else if (model == "sam3_point") {
+                    load_sam_point();
                 } else if (model == "rfdetr") {
                     result["test"] = load_rfdetr();
                 } else {
@@ -72,13 +73,17 @@ void detect_ai_api()
             result["y"] = parser.getParameter<double>("y");
             result["bytes"] = static_cast<Json::UInt64>(file.fileLength());
             try {
-                if (result["model"] == "sam3") {
-                    SamInput input;
-                    input.image = image_from_bytes(file.fileContent());
-                    input.x = static_cast<float>(result["x"].asFloat());
-                    input.y = static_cast<float>(result["y"].asFloat());
-                    input.tool = parser.getParameter<std::string>("tool");
-                    detect_sam(input);
+                const std::string model = result["model"].asString();
+                if (model == "sam3_text" || model == "sam3_point") {
+                    const SamInput input = make_sam_input(
+                        file.fileContent(),
+                        static_cast<float>(result["x"].asFloat()),
+                        static_cast<float>(result["y"].asFloat()),
+                        parser.getParameter<std::string>("tool"));
+                    const SamOutput output = model == "sam3_text" ? detect_sam_text(input) : detect_sam_point(input);
+                    const Json::Value shapes = sam_output_json(output);
+                    result["boxes"] = shapes["boxes"];
+                    result["masks"] = shapes["masks"];
                 } else if (result["model"] == "rfdetr") {
                     detect_rfdetr();
                 } else {
