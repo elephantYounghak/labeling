@@ -3,12 +3,14 @@ import {
   BOX_HANDLES,
   boxOf,
   boxPoints,
+  brushStrokes,
   clamp01,
   clampPoint,
   eraseBrush,
   handlePoint,
   hitBoxHandle,
   hitMark,
+  hitPolygonEdge,
   hitVertex,
   labelAnchor,
   loadMarks,
@@ -106,6 +108,7 @@ export function LabelStage({
   const imgRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const brushCanvasRef = useRef<HTMLCanvasElement>(null)
+  const brushStampRef = useRef<HTMLCanvasElement | null>(null)
   const [frame, setFrame] = useState<Frame>({ left: 0, top: 0, width: 0, height: 0 })
   const [natural, setNatural] = useState({ width: 0, height: 0 })
   const [marks, setMarks] = useState<Mark[]>(() => loadMarks(projectId, imageName))
@@ -143,6 +146,8 @@ export function LabelStage({
   const eraseRef = useRef(erasing)
   const opacityRef = useRef(opacity)
   const cameraRef = useRef(camera)
+  const extendRef = useRef<string | null>(null)
+  const [extendId, setExtendId] = useState<string | null>(null)
   const finishRef = useRef<(points: MarkPoint[]) => void>(() => {})
   const labelMenuRef = useRef<HTMLDivElement>(null)
   const labelOpenRef = useRef(false)
@@ -163,6 +168,27 @@ export function LabelStage({
   function select(id: string | null) {
     selectedRef.current = id
     setSelectedId(id)
+    if (extendRef.current && extendRef.current !== id) {
+      extendRef.current = null
+      setExtendId(null)
+    }
+  }
+
+  function chooseMark(mark: Mark) {
+    if (mark.tool === 'brush' && extendRef.current === mark.id) {
+      extendRef.current = null
+      setExtendId(null)
+      select(mark.id)
+      return
+    }
+    if (mark.tool === 'brush') {
+      extendRef.current = mark.id
+      setExtendId(mark.id)
+    } else {
+      extendRef.current = null
+      setExtendId(null)
+    }
+    select(mark.id)
   }
 
   function setGestureNow(next: Gesture | null) {
@@ -470,16 +496,17 @@ export function LabelStage({
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
-    const trace = (points: MarkPoint[]) => {
-      ctx.beginPath()
-      ctx.moveTo(points[0].x * box.width, points[0].y * box.height)
+    const trace = (target: CanvasRenderingContext2D, points: MarkPoint[]) => {
+      if (points.length < 2) return
+      target.beginPath()
+      target.moveTo(points[0].x * box.width, points[0].y * box.height)
       if (points.length === 2) {
-        ctx.lineTo(points[1].x * box.width, points[1].y * box.height)
+        target.lineTo(points[1].x * box.width, points[1].y * box.height)
       } else {
         for (let index = 1; index < points.length - 1; index += 1) {
           const current = points[index]
           const next = points[index + 1]
-          ctx.quadraticCurveTo(
+          target.quadraticCurveTo(
             current.x * box.width,
             current.y * box.height,
             ((current.x + next.x) / 2) * box.width,
@@ -487,37 +514,73 @@ export function LabelStage({
           )
         }
         const last = points[points.length - 1]
-        ctx.lineTo(last.x * box.width, last.y * box.height)
+        target.lineTo(last.x * box.width, last.y * box.height)
       }
-      ctx.stroke()
+      target.stroke()
     }
-    const paintStroke = (points: MarkPoint[], color: string, size: number, alpha: number, outline: boolean) => {
-      if (points.length < 2) return
-      if (outline) {
-        ctx.globalAlpha = 1
-        ctx.strokeStyle = '#ffffff'
-        ctx.lineWidth = size + 4
-        trace(points)
+    const stamp = (draw: (layer: CanvasRenderingContext2D) => void, alpha: number) => {
+      let layer = brushStampRef.current
+      if (!layer) {
+        layer = document.createElement('canvas')
+        brushStampRef.current = layer
       }
+      if (layer.width !== bitmapWidth || layer.height !== bitmapHeight) {
+        layer.width = bitmapWidth
+        layer.height = bitmapHeight
+      }
+      const layerCtx = layer.getContext('2d')
+      if (!layerCtx) return
+      layerCtx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0)
+      layerCtx.clearRect(0, 0, box.width, box.height)
+      layerCtx.lineCap = 'round'
+      layerCtx.lineJoin = 'round'
+      layerCtx.globalAlpha = 1
+      draw(layerCtx)
+      ctx.save()
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.globalAlpha = alpha
-      ctx.strokeStyle = color
-      ctx.lineWidth = size
-      trace(points)
-      ctx.globalAlpha = 1
+      ctx.drawImage(layer, 0, 0)
+      ctx.restore()
+    }
+    const paintMark = (
+      points: MarkPoint[],
+      cuts: number[] | undefined,
+      color: string,
+      size: number,
+      markAlpha: number,
+      outline: boolean,
+      extra?: MarkPoint[][],
+    ) => {
+      const strokes = [...brushStrokes(points, cuts), ...(extra ?? [])]
+      if (outline) {
+        stamp((layer) => {
+          layer.strokeStyle = '#ffffff'
+          layer.lineWidth = size + 4
+          for (const stroke of strokes) trace(layer, stroke)
+        }, 1)
+      }
+      stamp((layer) => {
+        layer.strokeStyle = color
+        layer.lineWidth = size
+        for (const stroke of strokes) trace(layer, stroke)
+      }, markAlpha)
     }
 
     const alpha = opacityRef.current
+    const current = gestureRef.current
+    const extendTarget = marksRef.current.find((mark) => mark.id === extendRef.current && mark.tool === 'brush')
+    const liveStroke = current?.kind === 'brush' && current.moved ? current.points : null
     for (const mark of marksRef.current) {
       if (mark.tool !== 'brush') continue
-      paintStroke(mark.points, mark.color, mark.size ?? 18, Math.max(alpha, 0.35), mark.id === selectedRef.current)
+      const extra = liveStroke && extendTarget?.id === mark.id ? [liveStroke] : undefined
+      paintMark(mark.points, mark.cuts, mark.color, mark.size ?? 18, Math.max(alpha, 0.35), mark.id === selectedRef.current, extra)
     }
-    const current = gestureRef.current
     if (current?.kind === 'move') {
       const ghost = marksRef.current.find((mark) => mark.id === current.id && mark.tool === 'brush')
-      if (ghost) paintStroke(current.base, ghost.color, ghost.size ?? 18, Math.min(alpha, 0.18), false)
+      if (ghost) paintMark(current.base, ghost.cuts, ghost.color, ghost.size ?? 18, Math.min(alpha, 0.18), false)
     }
-    if (current?.kind === 'brush' && current.moved) {
-      paintStroke(current.points, labelRef.current?.color ?? '#ff6d2d', brushRef.current, Math.max(alpha, 0.65), false)
+    if (liveStroke && !extendTarget) {
+      paintMark([], undefined, labelRef.current?.color ?? '#ff6d2d', brushRef.current, Math.max(alpha, 0.65), false, [liveStroke])
     }
   }
 
@@ -614,6 +677,15 @@ export function LabelStage({
           setGestureNow({ kind: 'vertex', id: selected.id, index: vertex })
           return
         }
+        const edge = hitPolygonEdge(selected.points, point, size)
+        if (edge) {
+          const points = selected.points.slice()
+          points.splice(edge.index + 1, 0, edge.point)
+          beginHistory()
+          setMarksNow(marksNow.map((mark) => (mark.id === selected.id ? { ...mark, points } : mark)))
+          setGestureNow({ kind: 'vertex', id: selected.id, index: edge.index + 1 })
+          return
+        }
       }
       const hit = hitMark(marksNow, point, size)
       if (hit) {
@@ -660,11 +732,18 @@ export function LabelStage({
       if (JSON.stringify(erased) !== JSON.stringify(marksRef.current)) setMarksNow(erased)
       return
     }
-    const selectedBrush = marksNow.find((mark) => mark.id === selectedRef.current && mark.tool === 'brush')
-    if (selectedBrush && hitMark([selectedBrush], point, size)) {
-      beginHistory()
-      setGestureNow({ kind: 'move', id: selectedBrush.id, origin: point, base: selectedBrush.points.map((item) => ({ ...item })) })
-      return
+    if (!event.altKey) {
+      const hit = hitMark(
+        marksNow.filter((mark) => mark.tool === 'brush'),
+        point,
+        size,
+      )
+      if (hit) {
+        select(hit.id)
+        beginHistory()
+        setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
+        return
+      }
     }
     setGestureNow({ kind: 'brush', points: [point], moved: false })
   }
@@ -771,16 +850,29 @@ export function LabelStage({
     }
     if (current.kind === 'brush') {
       replaceDraft([])
+      const drawn = current.moved ? current.points : [current.points[0], nudge(current.points[0], size)]
+      const target = marksRef.current.find((mark) => mark.id === extendRef.current && mark.tool === 'brush')
+      if (target) {
+        const before = marksRef.current
+        const cut = target.points.length
+        setMarksNow(
+          before.map((mark) =>
+            mark.id === target.id
+              ? { ...mark, points: [...mark.points, ...drawn], cuts: [...(mark.cuts ?? []), cut] }
+              : mark,
+          ),
+        )
+        pushPast(before)
+        return
+      }
       if (!current.moved) {
         const hit = hitMark(marksRef.current, current.points[0], size)
         if (hit) {
           select(hit.id)
           return
         }
-        finishMark('brush', [current.points[0], nudge(current.points[0], size)], brushRef.current)
-        return
       }
-      finishMark('brush', current.points, brushRef.current)
+      finishMark('brush', drawn, brushRef.current)
       return
     }
     commitHistory()
@@ -825,11 +917,16 @@ export function LabelStage({
   const selectedBox = selected?.tool === 'bbox' ? boxOf(selected.points) : null
   const hoverHandle =
     tool === 'bbox' && selectedBox && pointer && gesture?.kind !== 'bbox' ? hitBoxHandle(selectedBox, pointer, frame) : null
+  const hoverEdge =
+    tool === 'polygon' && selected?.tool === 'polygon' && pointer && gesture?.kind !== 'vertex'
+      ? hitPolygonEdge(selected.points, pointer, frame)
+      : null
   const drawing = gesture?.kind === 'bbox' || (tool === 'polygon' && draft.length > 0)
   let cursor = tool !== 'brush' ? 'crosshair' : 'none'
   if (gesture?.kind === 'resize') cursor = RESIZE_CURSOR[gesture.handle]
   else if (gesture?.kind === 'move' || gesture?.kind === 'vertex') cursor = 'grabbing'
   else if (!drawing && hoverHandle) cursor = RESIZE_CURSOR[hoverHandle]
+  else if (!drawing && hoverEdge) cursor = 'copy'
   else if (!drawing && tool !== 'brush' && pointer && hitMark(marks, pointer, frame)) cursor = 'move'
   else if (detectBusy) cursor = 'progress'
 
@@ -1118,7 +1215,7 @@ export function LabelStage({
         <div className="mark-list">
           {marks.map((mark, index) => (
             <div key={mark.id} className={mark.id === selectedId ? 'mark-chip active' : 'mark-chip'}>
-              <button type="button" onClick={() => select(mark.id)}>
+              <button type="button" className={mark.id === extendId ? 'extending' : undefined} onClick={() => chooseMark(mark)}>
                 <i style={{ background: mark.color }} />
                 {mark.name || 'label'} {index + 1}
               </button>

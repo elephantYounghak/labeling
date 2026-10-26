@@ -9,6 +9,7 @@ export type Mark = {
   color: string
   points: MarkPoint[]
   size?: number
+  cuts?: number[]
 }
 
 export type Box = { x: number; y: number; w: number; h: number }
@@ -35,6 +36,9 @@ function readMark(value: unknown): Mark | null {
   })
   if (points.length === 0) return null
   const size = typeof row.size === 'number' && row.size > 0 ? row.size : undefined
+  const cuts = Array.isArray(row.cuts)
+    ? row.cuts.filter((cut): cut is number => typeof cut === 'number' && cut > 0 && cut < points.length)
+    : undefined
   return {
     id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
     tool: row.tool,
@@ -42,7 +46,21 @@ function readMark(value: unknown): Mark | null {
     color: row.color,
     points,
     size,
+    ...(cuts && cuts.length > 0 ? { cuts } : {}),
   }
+}
+
+export function brushStrokes(points: MarkPoint[], cuts?: number[]): MarkPoint[][] {
+  if (points.length === 0) return []
+  const starts = [...new Set(cuts ?? [])].filter((cut) => cut > 0 && cut < points.length).sort((a, b) => a - b)
+  const strokes: MarkPoint[][] = []
+  let start = 0
+  for (const cut of starts) {
+    strokes.push(points.slice(start, cut))
+    start = cut
+  }
+  strokes.push(points.slice(start))
+  return strokes.filter((stroke) => stroke.length > 0)
 }
 
 export function loadMarks(projectId: string, imageName: string): Mark[] {
@@ -114,6 +132,20 @@ export function hitVertex(points: MarkPoint[], point: MarkPoint, frame: FrameSiz
     if (pixelDistance(points[index], point, frame) <= slop) return index
   }
   return -1
+}
+
+export function hitPolygonEdge(points: MarkPoint[], point: MarkPoint, frame: FrameSize, slop = 8) {
+  if (points.length < 2) return null
+  let best: { index: number; point: MarkPoint; distance: number } | null = null
+  for (let index = 0; index < points.length; index += 1) {
+    const next = points[(index + 1) % points.length]
+    const hit = closestOnSegment(point, points[index], next, frame)
+    if (hit.distance > slop) continue
+    if (pixelDistance(hit.point, points[index], frame) <= 8 || pixelDistance(hit.point, next, frame) <= 8) continue
+    if (best && hit.distance >= best.distance) continue
+    best = { index, point: hit.point, distance: hit.distance }
+  }
+  return best ? { index: best.index, point: best.point } : null
 }
 
 export function squarePoint(start: MarkPoint, point: MarkPoint, frame: FrameSize): MarkPoint {
@@ -212,24 +244,33 @@ export function eraseBrush(marks: Mark[], center: MarkPoint, radiusPx: number, f
       continue
     }
     const reach = radiusPx + (mark.size ?? 18) / 2
-    const groups: MarkPoint[][] = [[]]
-    for (const point of mark.points) {
-      if (pixelDistance(point, center, frame) <= reach) {
-        if (groups[groups.length - 1].length > 0) groups.push([])
-      } else {
-        groups[groups.length - 1].push(point)
+    const kept: MarkPoint[][] = []
+    for (const stroke of brushStrokes(mark.points, mark.cuts)) {
+      const groups: MarkPoint[][] = [[]]
+      for (const point of stroke) {
+        if (pixelDistance(point, center, frame) <= reach) {
+          if (groups[groups.length - 1].length > 0) groups.push([])
+        } else {
+          groups[groups.length - 1].push(point)
+        }
+      }
+      for (const group of groups) {
+        if (group.length === 0) continue
+        kept.push(group.length === 1 ? [group[0], { ...group[0] }] : group)
       }
     }
-    let usedId = false
-    for (const group of groups) {
-      if (group.length === 0) continue
-      next.push({
-        ...mark,
-        id: usedId ? crypto.randomUUID() : mark.id,
-        points: group.length === 1 ? [group[0], { ...group[0] }] : group,
-      })
-      usedId = true
+    if (kept.length === 0) continue
+    let cursor = 0
+    const cuts: number[] = []
+    for (const group of kept) {
+      if (cursor > 0) cuts.push(cursor)
+      cursor += group.length
     }
+    next.push({
+      ...mark,
+      points: kept.flat(),
+      ...(cuts.length > 0 ? { cuts } : { cuts: undefined }),
+    })
   }
   return next
 }
@@ -248,8 +289,10 @@ function hits(mark: Mark, point: MarkPoint, frame?: FrameSize) {
     return edgeNear(mark.points, point, frame, 6, true)
   }
   const reach = frame ? (mark.size ?? 18) / 2 + 4 : 0.02
-  if (!frame) return mark.points.some((item) => Math.hypot(item.x - point.x, item.y - point.y) <= reach)
-  return edgeNear(mark.points, point, frame, reach, false)
+  return brushStrokes(mark.points, mark.cuts).some((stroke) => {
+    if (!frame) return stroke.some((item) => Math.hypot(item.x - point.x, item.y - point.y) <= reach)
+    return edgeNear(stroke, point, frame, reach, false)
+  })
 }
 
 function edgeNear(points: MarkPoint[], point: MarkPoint, frame: FrameSize, slop: number, closed: boolean) {
@@ -263,7 +306,7 @@ function edgeNear(points: MarkPoint[], point: MarkPoint, frame: FrameSize, slop:
   return false
 }
 
-function segmentDistance(point: MarkPoint, a: MarkPoint, b: MarkPoint, frame: FrameSize) {
+function closestOnSegment(point: MarkPoint, a: MarkPoint, b: MarkPoint, frame: FrameSize) {
   const ax = a.x * frame.width
   const ay = a.y * frame.height
   const bx = b.x * frame.width
@@ -273,9 +316,21 @@ function segmentDistance(point: MarkPoint, a: MarkPoint, b: MarkPoint, frame: Fr
   const dx = bx - ax
   const dy = by - ay
   const length = dx * dx + dy * dy
-  if (length === 0) return Math.hypot(px - ax, py - ay)
-  const t = Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / length))
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+  const t = length === 0 ? 0 : Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / length))
+  const x = ax + t * dx
+  const y = ay + t * dy
+  return {
+    t,
+    distance: Math.hypot(px - x, py - y),
+    point: {
+      x: frame.width ? x / frame.width : a.x,
+      y: frame.height ? y / frame.height : a.y,
+    },
+  }
+}
+
+function segmentDistance(point: MarkPoint, a: MarkPoint, b: MarkPoint, frame: FrameSize) {
+  return closestOnSegment(point, a, b, frame).distance
 }
 
 function pointInPolygon(point: MarkPoint, polygon: MarkPoint[]) {

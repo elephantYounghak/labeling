@@ -5,10 +5,9 @@ set_policy("package.cmake_generator.ninja", false) -- ninja가 안 되는 문제
 package("cudnn")
     set_kind("library")
     set_homepage("https://developer.nvidia.com/cudnn")
-    set_description("NVIDIA cuDNN 9.24 for CUDA 12.9")
+    set_description("NVIDIA cuDNN 9.24 for CUDA 12.8.1")
     on_load(function (package)
         package:add("deps", "cuda 12.8.1", {
-            system = false,
             configs = {
                 utils = {"cudart", "cublas", "cufft", "nvrtc"},
             }
@@ -16,9 +15,9 @@ package("cudnn")
     end)
     on_fetch(function (package, opt)
         local root = "C:/Program Files/NVIDIA/CUDNN/v9.24"
-        local includedir = path.join(root, "include", "12.9")
-        local linkdir = path.join(root, "lib", "12.9", "x64")
-        local bindir = path.join(root, "bin", "12.9", "x64")
+        local includedir = path.join(root, "include", "12.8")
+        local linkdir = path.join(root, "lib", "12.8", "x64")
+        local bindir = path.join(root, "bin", "12.8", "x64")
         if not os.isfile(path.join(linkdir, "cudnn.lib")) then
             return
         end
@@ -32,6 +31,9 @@ package("cudnn")
     end)
     on_install("windows|x64", function (package) end)
 package_end()
+
+add_requires("cudnn 9.24", {system = true})
+add_requireconfs("**|cudnn", {override = true, system = false})
 
 add_requires("drogon", {
     configs = {
@@ -49,20 +51,18 @@ add_requires("soci", {
 })
 add_requireconfs("**cuda", {
     override = true,
-    system = false,
     version = "12.8.1",
     configs = {
         utils = {"cudart", "cublas", "cufft", "nvrtc"},
     }
 })
 add_requires("cuda 12.8.1", {
-    system = false,
     configs = {
         utils = {"cudart", "cublas", "cufft", "nvrtc"},
     }
 })
-add_requires("cudnn 9.24", {system = true})
 add_requires("onnxruntime 1.22.1", {
+    system = false,
     configs = {
         gpu = true,
         cuda_version = "12",
