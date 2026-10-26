@@ -394,8 +394,13 @@ function App() {
     try {
       await loadModelApi(selectedModel)
       setLoadedModelIds((ids) => (ids.includes(selectedModel.id) ? ids : [...ids, selectedModel.id]))
-    } catch {
-      setModelError('백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 불러와 주세요.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      setModelError(
+        message && message !== 'Failed to fetch'
+          ? message
+          : '백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 불러와 주세요.',
+      )
     } finally {
       setModelBusy(false)
     }

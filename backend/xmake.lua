@@ -88,7 +88,8 @@ target("backend")
     add_linkdirs("lib")
     add_includedirs("lib")
     add_packages("drogon", "soci", "cuda", "cudnn", "onnxruntime", "opencv")
-    add_runenvs("PATH", "C:/Program Files/NVIDIA/CUDNN/v9.24/bin/12.9/x64")
+    add_runenvs("PATH", "C:/Program Files/NVIDIA/CUDNN/v9.24/bin/12.8/x64")
+    add_runenvs("PATH", "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin")
     if is_plat("windows") then
         add_syslinks("ole32", "uuid", "shell32", "odbc32")
     end

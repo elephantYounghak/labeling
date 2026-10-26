@@ -18,7 +18,7 @@ export const MODELS: AiModel[] = [
     id: 'sam3_text',
     name: 'SAM3 Text',
     description: 'Alt+클릭하면 이미지 전체에서 물체를 모두 찾아 그립니다.',
-    files: ['sam3_image_encoder.onnx', 'sam3_language_encoder.onnx', 'sam3_decoder.onnx'],
+    files: ['vision_encoder_int4.onnx', 'text_encoder_int4.onnx', 'decoder_int4.onnx'],
   },
   {
     id: 'rfdetr',
@@ -49,6 +49,8 @@ export async function loadModelApi(model: AiModel): Promise<void> {
     }),
   })
   if (!res.ok) {
-    throw new Error('모델 로드 API가 실패했습니다.')
+    const body = await res.json().catch(() => null)
+    const detail = body && typeof body.error === 'string' ? body.error : ''
+    throw new Error(detail || '모델 로드 API가 실패했습니다.')
   }
 }
