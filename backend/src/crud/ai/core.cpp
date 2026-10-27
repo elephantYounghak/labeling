@@ -3,9 +3,9 @@
 #include "crud/ai/core/sam3_point.h"
 #include "crud/ai/core/sam3_text.h"
 
-SamInput make_sam_input(std::string_view bytes, float x, float y, const std::string& tool)
+SamInput make_sam_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word)
 {
-    return sam3::make_input(bytes, x, y, tool);
+    return sam3::make_input(bytes, x, y, tool, word);
 }
 
 Json::Value sam_output_json(const SamOutput& output)

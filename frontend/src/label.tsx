@@ -630,9 +630,11 @@ export function LabelStage({
     } catch (error) {
       setDetectFailed(true)
       setDetectNote(
-        error instanceof Error && error.message === '검출 API가 실패했습니다.'
-          ? error.message
-          : '백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 검출해 주세요.',
+        error instanceof TypeError
+          ? '백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 검출해 주세요.'
+          : error instanceof Error && error.message
+            ? error.message
+            : '검출 API가 실패했습니다.',
       )
     } finally {
       detectBusyRef.current = false

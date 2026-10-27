@@ -167,7 +167,15 @@ export async function detectApi(body: DetectRequest, file: File): Promise<unknow
     body: form,
   })
   if (!res.ok) {
-    throw new Error('검출 API가 실패했습니다.')
+    let message = '검출 API가 실패했습니다.'
+    try {
+      const body = await res.json() as { error?: unknown }
+      if (typeof body.error === 'string' && body.error.trim()) {
+        message = body.error.trim()
+      }
+    } catch {
+    }
+    throw new Error(message)
   }
   return res.json()
 }

@@ -10,16 +10,30 @@ backend/.cache/
 backend/build/
 backend/bin/
 backend/data/
+downloads/
+
+compile_commands.json
 
 *.exe
+*.dll
+*.lib
 *.obj
 *.pdb
+*.exp
+*.ilk
+*.zip
+*.7z
+*.part
+*.onnx
+*.onnx.data
 
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
+*.user
 *.ntvs*
 *.njsproj
 *.sln

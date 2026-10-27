@@ -19,6 +19,7 @@ struct SamInput
     float x = 0;
     float y = 0;
     std::string tool;
+    std::string word;
 };
 
 struct SamBox
@@ -44,7 +45,7 @@ struct SamOutput
 
 void load_sam_text();
 void load_sam_point();
-SamInput make_sam_input(std::string_view bytes, float x, float y, const std::string& tool);
+SamInput make_sam_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word);
 SamOutput detect_sam_text(const SamInput& input);
 SamOutput detect_sam_point(const SamInput& input);
 Json::Value sam_output_json(const SamOutput& output);

@@ -77,6 +77,7 @@ void append_detection(SamOutput& output, const Prediction& prediction, const std
 
 Ort::SessionOptions cpu_options()
 {
+    ort_env();
     Ort::SessionOptions options;
     options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
     return options;
@@ -169,13 +170,14 @@ SamOutput to_output(const std::vector<Prediction>& predictions, const std::strin
     return output;
 }
 
-SamInput make_input(std::string_view bytes, float x, float y, const std::string& tool)
+SamInput make_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word)
 {
     SamInput input;
     input.image = image_from_bytes(bytes);
     input.x = x;
     input.y = y;
     input.tool = tool;
+    input.word = word;
     return input;
 }
 
