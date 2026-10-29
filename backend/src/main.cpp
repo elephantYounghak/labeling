@@ -15,8 +15,9 @@ int main()
     update_labeling_api();
     upload_folder_api();
     load_ai_api();
-    run_ai_api();
     detect_ai_api();
+    upload_ai_api();
+    train_ai_api();
     drogon::app().addListener("0.0.0.0", 18080).run();
     return 0;
 }

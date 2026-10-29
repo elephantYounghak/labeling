@@ -1,30 +1,10 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import type { ImageEntry } from './folder'
 import { labeledImages } from './marks'
 import type { Project } from './projects'
-import {
-  RFDETR_SIZES,
-  startTrainApi,
-  stopTrainApi,
-  trainStatusApi,
-  type RfdetrSize,
-  type TrainStatus,
-} from './rfdetr'
+import { RFDETR_SIZES, startTrainApi, uploadModelApi, type RfdetrSize } from './rfdetr'
 
 type Tab = 'train' | 'infer'
-
-type Job = {
-  id: string
-  projectId: string
-  status: TrainStatus
-}
-
-const STATE_TEXT: Record<TrainStatus['state'], string> = {
-  running: '학습 중',
-  done: '학습 완료',
-  stopped: '중단됨',
-  failed: '실패',
-}
 
 function onnxFile(file: File) {
   return file.name.toLowerCase().endsWith('.onnx')
@@ -46,32 +26,19 @@ export function RfdetrPanel({
   const [tab, setTab] = useState<Tab>('train')
   const [size, setSize] = useState<RfdetrSize>('small')
   const [epochs, setEpochs] = useState(50)
-  const [job, setJob] = useState<Job | null>(null)
+  const [batchSize, setBatchSize] = useState(4)
+  const [training, setTraining] = useState(false)
   const [modelFile, setModelFile] = useState<File | null>(null)
   const [modelReady, setModelReady] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [threshold, setThreshold] = useState(0.5)
   const [note, setNote] = useState('')
   const [failed, setFailed] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const projectId = project?.id ?? ''
-  const running = job?.status.state === 'running'
-  const runningId = running ? job.id : ''
-  const jobHere = job && job.projectId === projectId ? job : null
   const labeled = projectId ? labeledImages(projectId) : new Set<string>()
   const labeledCount = images.filter((image) => labeled.has(image.name)).length
-
-  useEffect(() => {
-    if (!runningId) return
-    const timer = window.setInterval(() => {
-      trainStatusApi(runningId)
-        .then((status) => {
-          setJob((current) => (current && current.id === runningId ? { ...current, status } : current))
-        })
-        .catch(() => {})
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [runningId])
 
   function report(message: string, isError = false) {
     setNote(message)
@@ -79,30 +46,21 @@ export function RfdetrPanel({
   }
 
   async function onTrain() {
-    if (!project || running) return
+    if (!project || training) return
     report('')
+    setTraining(true)
     try {
-      const id = await startTrainApi({
+      await startTrainApi({
         projectId: project.id,
         size,
         epochs,
-        images: labeledCount,
-        classes: project.classes,
+        batchSize,
       })
-      setJob({ id, projectId: project.id, status: { state: 'running', epoch: 0, epochs, map: null } })
+      report('학습 요청을 보냈습니다.')
     } catch (error) {
       report(errorText(error, '학습을 시작하지 못했습니다.'), true)
-    }
-  }
-
-  async function onStop() {
-    if (!job || !running) return
-    try {
-      await stopTrainApi(job.id)
-      const status = await trainStatusApi(job.id)
-      setJob({ ...job, status })
-    } catch (error) {
-      report(errorText(error, '학습을 멈추지 못했습니다.'), true)
+    } finally {
+      setTraining(false)
     }
   }
 
@@ -121,18 +79,25 @@ export function RfdetrPanel({
     report('')
   }
 
-  function onLoadModel() {
-    if (!modelFile || !onnxFile(modelFile)) return
-    setModelReady(true)
+  async function onLoadModel() {
+    if (!modelFile || !onnxFile(modelFile) || uploading) return
     report('')
+    setUploading(true)
+    try {
+      await uploadModelApi(modelFile)
+      setModelReady(true)
+      report('모델을 불러왔습니다.')
+    } catch (error) {
+      setModelReady(false)
+      report(errorText(error, '모델을 불러오지 못했습니다.'), true)
+    } finally {
+      setUploading(false)
+    }
   }
 
   if (!project) {
     return <p className="model-status">프로젝트를 열면 학습하고 추론할 수 있습니다.</p>
   }
-
-  const otherProjectBusy = running && job.projectId !== project.id
-  const progress = jobHere && jobHere.status.epochs > 0 ? (jobHere.status.epoch / jobHere.status.epochs) * 100 : 0
 
   return (
     <div className="rfdetr">
@@ -171,7 +136,7 @@ export function RfdetrPanel({
                 role="radio"
                 aria-checked={size === item.id}
                 onClick={() => setSize(item.id)}
-                disabled={running}
+                disabled={training}
               >
                 {item.label}
               </button>
@@ -186,45 +151,26 @@ export function RfdetrPanel({
               max={500}
               value={epochs}
               onChange={(event) => setEpochs(Math.min(500, Math.max(1, Number(event.target.value) || 1)))}
-              disabled={running}
+              disabled={training}
             />
           </label>
 
-          {running && jobHere ? (
-            <button type="button" className="ghost" onClick={onStop}>
-              중단
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              onClick={onTrain}
-              disabled={labeledCount === 0 || otherProjectBusy}
-            >
-              학습 시작
-            </button>
-          )}
-          {labeledCount === 0 ? <p className="model-status">라벨된 이미지가 있어야 학습할 수 있습니다.</p> : null}
-          {otherProjectBusy ? <p className="model-status">다른 프로젝트가 학습 중입니다.</p> : null}
+          <label className="field-label rfdetr-epochs">
+            batch size
+            <input
+              type="number"
+              min={1}
+              max={128}
+              value={batchSize}
+              onChange={(event) => setBatchSize(Math.min(128, Math.max(1, Number(event.target.value) || 1)))}
+              disabled={training}
+            />
+          </label>
 
-          {jobHere ? (
-            <>
-              <div
-                className="rfdetr-progress"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={jobHere.status.epochs}
-                aria-valuenow={jobHere.status.epoch}
-              >
-                <span style={{ width: `${progress}%` }} />
-              </div>
-              <p className={jobHere.status.state === 'done' ? 'model-status ready' : 'model-status'}>
-                {STATE_TEXT[jobHere.status.state]} {jobHere.status.epoch} / {jobHere.status.epochs}
-                {jobHere.status.map !== null ? ` · mAP ${jobHere.status.map.toFixed(2)}` : ''}
-              </p>
-              {jobHere.status.error ? <p className="error">{jobHere.status.error}</p> : null}
-            </>
-          ) : null}
+          <button type="button" className="primary" onClick={onTrain} disabled={labeledCount === 0 || training}>
+            학습 시작
+          </button>
+          {labeledCount === 0 ? <p className="model-status">라벨된 이미지가 있어야 학습할 수 있습니다.</p> : null}
         </div>
       ) : (
         <div className="rfdetr-body">
@@ -236,7 +182,7 @@ export function RfdetrPanel({
           <p className="rfdetr-file" title={modelFile?.name ?? ''}>
             {modelFile ? modelFile.name : '선택된 파일 없음'}
           </p>
-          <button type="button" className="primary" onClick={onLoadModel} disabled={!modelFile}>
+          <button type="button" className="primary" onClick={onLoadModel} disabled={!modelFile || uploading}>
             불러오기
           </button>
           {modelReady ? <p className="model-status ready">불러옴</p> : null}
@@ -255,10 +201,6 @@ export function RfdetrPanel({
               aria-label="신뢰도"
             />
           </label>
-
-          <button type="button" className="primary" disabled={!modelReady}>
-            추론
-          </button>
         </div>
       )}
 
