@@ -16,6 +16,8 @@ import {
   loadMarks,
   pixelDistance,
   resizeBox,
+  retargetMark,
+  retargetStoredMarks,
   saveMarks,
   squarePoint,
   translateInside,
@@ -88,6 +90,7 @@ export function LabelStage({
   modelDescription,
   modelReady,
   folderPath,
+  onSaved,
 }: {
   projectId: string
   imageName: string
@@ -104,6 +107,7 @@ export function LabelStage({
   modelDescription: string
   modelReady: boolean
   folderPath: string
+  onSaved: () => void
 }) {
   const imgRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -142,6 +146,7 @@ export function LabelStage({
   const classesRef = useRef(classes)
   const onClassRef = useRef(onClassIndex)
   const onToolRef = useRef(onTool)
+  const onSavedRef = useRef(onSaved)
   const brushRef = useRef(brushSize)
   const eraseRef = useRef(erasing)
   const opacityRef = useRef(opacity)
@@ -247,6 +252,7 @@ export function LabelStage({
     classesRef.current = classes
     onClassRef.current = onClassIndex
     onToolRef.current = onTool
+    onSavedRef.current = onSaved
     brushRef.current = brushSize
     eraseRef.current = erasing
     opacityRef.current = opacity
@@ -304,6 +310,7 @@ export function LabelStage({
 
   useEffect(() => {
     saveMarks(projectId, imageName, marks)
+    onSavedRef.current()
   }, [projectId, imageName, marks])
 
   useEffect(() => {
@@ -318,6 +325,16 @@ export function LabelStage({
     setDraft([])
     gestureRef.current = null
     setGesture(null)
+    retargetStoredMarks(projectId, tool)
+    const before = marksRef.current
+    const next = before.flatMap((mark) => {
+      const converted = retargetMark(mark, tool)
+      return converted ? [converted] : []
+    })
+    if (next.length === before.length && next.every((mark, index) => mark === before[index])) return
+    setMarksNow(next)
+    pushPast(before)
+    if (selectedRef.current && !next.some((mark) => mark.id === selectedRef.current)) select(null)
   }, [tool])
 
   useEffect(() => {

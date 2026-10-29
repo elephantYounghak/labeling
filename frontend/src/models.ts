@@ -23,7 +23,7 @@ export const MODELS: AiModel[] = [
   {
     id: 'rfdetr',
     name: 'RF-DETR',
-    description: '테스트용 모델입니다. 아직 검출 결과가 없습니다.',
+    description: '라벨한 이미지로 학습한 뒤, 라벨 없는 이미지에 박스를 그립니다.',
     files: [],
   },
 ]

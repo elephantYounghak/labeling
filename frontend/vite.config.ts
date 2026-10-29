@@ -9,7 +9,15 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/io': 'http://127.0.0.1:18080',
-      '/project': 'http://127.0.0.1:18080',
+      '/project': {
+        target: 'http://127.0.0.1:18080',
+        bypass(req) {
+          const url = req.url ?? ''
+          if (url === '/projects' || url.startsWith('/projects/') || url.startsWith('/projects?')) {
+            return '/index.html'
+          }
+        },
+      },
       '/labeling': 'http://127.0.0.1:18080',
       '/ai': 'http://127.0.0.1:18080',
     },

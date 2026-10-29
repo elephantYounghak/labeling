@@ -22,6 +22,7 @@ import {
   type LabelTool,
   type Project,
 } from './projects'
+import { RfdetrPanel } from './rfdetr-panel'
 
 const CLASS_COLORS = [
   '#ff6d2d',
@@ -126,6 +127,8 @@ function App() {
   const [loadedModelIds, setLoadedModelIds] = useState<string[]>([])
   const [modelBusy, setModelBusy] = useState(false)
   const [modelError, setModelError] = useState('')
+  const [, setLabelsTick] = useState(0)
+  const [stageVersion, setStageVersion] = useState(0)
   const pickedFolder = useRef<FileSystemDirectoryHandle | null>(null)
   const folderHandles = useRef(new Map<string, FileSystemDirectoryHandle>())
   const imageUrlRef = useRef('')
@@ -141,6 +144,11 @@ function App() {
     setLabelClass(0)
   }, [activeId])
   const currentImage = images[imageIndex] ?? null
+  const currentNameRef = useRef('')
+
+  useEffect(() => {
+    currentNameRef.current = currentImage?.name ?? ''
+  })
 
   function closeCreate() {
     if (!busy) navigate('/')
@@ -486,7 +494,7 @@ function App() {
                   <div className="viewer">
                     {imageUrl && imageFile && currentImage ? (
                       <LabelStage
-                        key={`${active.id}:${currentImage.name}`}
+                        key={`${active.id}:${currentImage.name}:${stageVersion}`}
                         projectId={active.id}
                         imageName={currentImage.name}
                         imageUrl={imageUrl}
@@ -502,6 +510,7 @@ function App() {
                         modelDescription={selectedModel.description}
                         modelReady={modelReady}
                         folderPath={active.path}
+                        onSaved={() => setLabelsTick((tick) => tick + 1)}
                       />
                     ) : (
                       <p className="viewer-note">이미지를 읽는 중…</p>
@@ -685,10 +694,23 @@ function App() {
               </option>
             ))}
           </select>
-          <button type="button" className="primary" onClick={onLoadModel} disabled={modelBusy}>
-            {modelBusy ? '불러오는 중…' : '불러오기'}
-          </button>
-          {modelReady ? <p className="model-status ready">불러옴</p> : null}
+          {selectedModel.id === 'rfdetr' ? (
+            <RfdetrPanel
+              project={active}
+              images={images}
+              onLabeled={(names) => {
+                if (names.includes(currentNameRef.current)) setStageVersion((version) => version + 1)
+                setLabelsTick((tick) => tick + 1)
+              }}
+            />
+          ) : (
+            <>
+              <button type="button" className="primary" onClick={onLoadModel} disabled={modelBusy}>
+                {modelBusy ? '불러오는 중…' : '불러오기'}
+              </button>
+              {modelReady ? <p className="model-status ready">불러옴</p> : null}
+            </>
+          )}
           {modelError ? (
             <p className="error" role="alert">
               {modelError}

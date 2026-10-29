@@ -79,6 +79,42 @@ export function loadMarks(projectId: string, imageName: string): Mark[] {
   }
 }
 
+export function labeledImages(projectId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(storageKey(projectId))
+    if (!raw) return new Set()
+    const all = JSON.parse(raw) as Record<string, unknown>
+    return new Set(
+      Object.keys(all).filter((name) => {
+        const list = all[name]
+        return Array.isArray(list) && list.length > 0
+      }),
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+export function retargetStoredMarks(projectId: string, tool: LabelTool) {
+  try {
+    const raw = localStorage.getItem(storageKey(projectId))
+    if (!raw) return
+    const all = JSON.parse(raw) as Record<string, unknown>
+    for (const name of Object.keys(all)) {
+      if (!Array.isArray(all[name])) continue
+      all[name] = (all[name] as unknown[]).flatMap((item) => {
+        const mark = readMark(item)
+        if (!mark) return []
+        const converted = retargetMark(mark, tool)
+        return converted ? [converted] : []
+      })
+    }
+    localStorage.setItem(storageKey(projectId), JSON.stringify(all))
+  } catch {
+    return
+  }
+}
+
 export function saveMarks(projectId: string, imageName: string, marks: Mark[]) {
   const raw = localStorage.getItem(storageKey(projectId))
   const all = raw ? (JSON.parse(raw) as Record<string, Mark[]>) : {}
@@ -104,6 +140,47 @@ export function boxOf(points: MarkPoint[]): Box | null {
   const x = Math.min(a.x, b.x)
   const y = Math.min(a.y, b.y)
   return { x, y, w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) }
+}
+
+function boundsOf(points: MarkPoint[]): Box | null {
+  if (points.length === 0) return null
+  let minX = 1
+  let minY = 1
+  let maxX = 0
+  let maxY = 0
+  for (const point of points) {
+    minX = Math.min(minX, point.x)
+    minY = Math.min(minY, point.y)
+    maxX = Math.max(maxX, point.x)
+    maxY = Math.max(maxY, point.y)
+  }
+  if (maxX - minX <= 0 || maxY - minY <= 0) return null
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+function cornersOf(box: Box): MarkPoint[] {
+  return [
+    { x: box.x, y: box.y },
+    { x: box.x + box.w, y: box.y },
+    { x: box.x + box.w, y: box.y + box.h },
+    { x: box.x, y: box.y + box.h },
+  ]
+}
+
+export function retargetMark(mark: Mark, tool: LabelTool): Mark | null {
+  if (mark.tool === tool) return mark
+  const box = mark.tool === 'bbox' ? boxOf(mark.points) : boundsOf(mark.points)
+  if (tool === 'bbox') {
+    if (!box) return null
+    return { id: mark.id, tool, name: mark.name, color: mark.color, points: boxPoints(box) }
+  }
+  const points = mark.tool === 'bbox' && box ? cornersOf(box) : mark.points
+  if (tool === 'polygon') {
+    if (points.length < 3) return null
+    return { id: mark.id, tool, name: mark.name, color: mark.color, points }
+  }
+  if (points.length === 0) return null
+  return { id: mark.id, tool, name: mark.name, color: mark.color, points, size: mark.size ?? 18 }
 }
 
 export function boxPoints(box: Box): MarkPoint[] {

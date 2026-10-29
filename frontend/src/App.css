@@ -155,6 +155,128 @@
   font-size: 12px;
 }
 
+.model-panel .ghost {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.rfdetr,
+.rfdetr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rfdetr {
+  margin-top: 4px;
+}
+
+.pill-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #1b1b1b;
+}
+
+.pill-seg button {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.pill-seg button[aria-selected='true'],
+.pill-seg button[aria-checked='true'] {
+  background: var(--accent-dim);
+  color: #8dc0ff;
+}
+
+.pill-seg button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rfdetr-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0;
+}
+
+.rfdetr-stats div {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1b1b1b;
+}
+
+.rfdetr-stats dt {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.rfdetr-stats dd {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.rfdetr-file {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rfdetr-epochs input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #1b1b1b;
+  color: var(--ink);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.rfdetr-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: #333333;
+  overflow: hidden;
+}
+
+.rfdetr-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
 .main {
   flex: 1;
   min-width: 0;
