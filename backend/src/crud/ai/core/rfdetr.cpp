@@ -1,12 +1,15 @@
 #include "crud/ai/core.h"
+#include "crud/ai/core/sam3.h"
 
 #include "utils/coco.h"
 #include "utils/path.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -32,14 +35,86 @@ std::string image_name(const Json::Value& row)
 
 }  // namespace
 
-std::string load_rfdetr()
+std::string detect_rfdetr()
 {
     return "test";
 }
 
-std::string detect_rfdetr()
+namespace {
+
+const fs::path kModelDir = "backend/data/models/rfdetr";
+std::unique_ptr<Ort::Session> session;
+
+bool ends_with_onnx(std::string name)
 {
-    return "test";
+    for (char& letter : name) {
+        letter = static_cast<char>(std::tolower(static_cast<unsigned char>(letter)));
+    }
+    return name.size() >= 5 && name.compare(name.size() - 5, 5, ".onnx") == 0;
+}
+
+std::string onnx_file_name(const std::string& filename)
+{
+    const std::string name = path_to_utf8(utf8_to_path(filename).filename());
+    if (name.empty() || name == "." || name == ".." || !ends_with_onnx(name)) {
+        throw std::runtime_error("ONNX 파일만 불러올 수 있습니다.");
+    }
+    if (name.find_first_of("<>:\"|?*") != std::string::npos) {
+        throw std::runtime_error("ONNX 파일 이름을 쓰지 못했습니다.");
+    }
+    return name;
+}
+
+fs::path newest_onnx()
+{
+    if (!fs::is_directory(kModelDir)) {
+        throw std::runtime_error("RF-DETR ONNX 파일이 없습니다. 추론 탭에서 모델을 먼저 불러오세요.");
+    }
+    fs::path best;
+    fs::file_time_type newest{};
+    bool found = false;
+    for (const fs::directory_entry& entry : fs::directory_iterator(kModelDir)) {
+        if (!entry.is_regular_file() || !ends_with_onnx(path_to_utf8(entry.path().filename()))) {
+            continue;
+        }
+        const fs::file_time_type written = entry.last_write_time();
+        if (!found || written > newest) {
+            found = true;
+            newest = written;
+            best = entry.path();
+        }
+    }
+    if (!found) {
+        throw std::runtime_error("RF-DETR ONNX 파일이 없습니다. 추론 탭에서 모델을 먼저 불러오세요.");
+    }
+    return best;
+}
+
+}  // namespace
+
+std::string load_rfdetr()
+{
+    const fs::path file = newest_onnx();
+    session = sam3::open_session(file, sam3::gpu_options());
+    return path_to_utf8(file.filename());
+}
+
+std::string upload_rfdetr(std::string_view bytes, const std::string& filename)
+{
+    if (bytes.empty()) {
+        throw std::runtime_error("ONNX 파일이 없습니다.");
+    }
+    fs::create_directories(kModelDir);
+    const fs::path file = kModelDir / utf8_to_path(onnx_file_name(filename));
+    std::ofstream output(file, std::ios::binary);
+    if (!output) {
+        throw std::runtime_error("ONNX 파일을 저장하지 못했습니다.");
+    }
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    if (!output) {
+        throw std::runtime_error("ONNX 파일을 저장하지 못했습니다.");
+    }
+    return path_to_utf8(file.filename());
 }
 
 std::string make_train_command(const std::string& dataset_dir, const std::string& size,

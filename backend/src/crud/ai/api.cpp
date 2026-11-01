@@ -72,7 +72,7 @@ void load_ai_api()
                 } else if (model == "sam3_point") {
                     load_sam_point();
                 } else if (model == "rfdetr") {
-                    result["test"] = load_rfdetr();
+                    result["name"] = load_rfdetr();
                 } else {
                     throw std::runtime_error("지원하지 않는 모델입니다.");
                 }
@@ -158,9 +158,13 @@ void upload_ai_api()
                 callback(json_error("ONNX 파일만 불러올 수 있습니다.", drogon::k400BadRequest));
                 return;
             }
-            Json::Value saved;
-            saved["name"] = file.getFileName();
-            callback(drogon::HttpResponse::newHttpJsonResponse(saved));
+            try {
+                Json::Value saved;
+                saved["name"] = upload_rfdetr(file.fileContent(), file.getFileName());
+                callback(drogon::HttpResponse::newHttpJsonResponse(saved));
+            } catch (const std::exception& error) {
+                callback(json_error(error.what(), drogon::k500InternalServerError));
+            }
         },
         {drogon::Post});
 }

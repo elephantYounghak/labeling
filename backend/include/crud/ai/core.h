@@ -52,4 +52,5 @@ Json::Value sam_output_json(const SamOutput& output);
 
 std::string load_rfdetr();
 std::string detect_rfdetr();
+std::string upload_rfdetr(std::string_view bytes, const std::string& filename);
 void train_rfdetr(const std::string& dataset_dir, const std::string& size, int epochs, int batch_size);
