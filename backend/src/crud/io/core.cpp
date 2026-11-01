@@ -1,32 +1,15 @@
 #include "crud/io/core.h"
 
+#include "utils/path.h"
+
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <stdexcept>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-
 namespace {
 
 constexpr const wchar_t* kFileName = L"_annotation_.json";
-
-std::filesystem::path utf8_to_path(const std::string& text)
-{
-    if (text.empty()) {
-        return {};
-    }
-    const int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
-    if (size <= 1) {
-        return {};
-    }
-    std::wstring wide(static_cast<size_t>(size - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, wide.data(), size);
-    return std::filesystem::path(wide);
-}
 
 std::filesystem::path annotation_file(const std::string& folder)
 {
@@ -35,7 +18,7 @@ std::filesystem::path annotation_file(const std::string& folder)
     }
     const std::filesystem::path directory = utf8_to_path(folder);
     if (!std::filesystem::is_directory(directory)) {
-        throw std::runtime_error("폴더를 찾지 못했습니다.");
+        throw std::runtime_error("폴더를 찾지 못했습니다: " + folder);
     }
     return directory / kFileName;
 }

@@ -6,11 +6,17 @@ export const RFDETR_SIZES: { id: RfdetrSize; label: string }[] = [
   { id: 'large', label: 'Large' },
 ]
 
+export type TrainImage = {
+  path: string
+  file: File
+}
+
 export type TrainRequest = {
-  projectId: string
   size: RfdetrSize
   epochs: number
   batchSize: number
+  annotation: File
+  images: TrainImage[]
 }
 
 async function errorMessage(res: Response, fallback: string) {
@@ -27,11 +33,16 @@ export async function uploadModelApi(file: File): Promise<void> {
 }
 
 export async function startTrainApi(request: TrainRequest): Promise<string> {
-  const res = await fetch('/ai/train', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  })
+  const form = new FormData()
+  form.append('size', request.size)
+  form.append('epochs', String(request.epochs))
+  form.append('batchSize', String(request.batchSize))
+  form.append('annotation', request.annotation, '_annotation_.json')
+  form.append('paths', JSON.stringify(request.images.map((image) => image.path)))
+  for (const image of request.images) {
+    form.append('images', image.file, image.file.name)
+  }
+  const res = await fetch('/ai/train', { method: 'POST', body: form })
   if (!res.ok) throw new Error(await errorMessage(res, '학습 API가 실패했습니다.'))
   const saved = (await res.json().catch(() => null)) as { id?: unknown }
   return typeof saved?.id === 'string' ? saved.id : ''

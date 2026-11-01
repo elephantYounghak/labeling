@@ -1,13 +1,18 @@
 #include "crud/ai/api.h"
 
 #include "crud/ai/core.h"
+#include "utils/dataset.h"
+#include "utils/path.h"
 
 #include <drogon/MultiPart.h>
 #include <drogon/drogon.h>
 #include <atomic>
 #include <cctype>
 #include <exception>
+#include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -31,6 +36,23 @@ bool ends_with_onnx(std::string name)
 bool allowed_size(const std::string& size)
 {
     return size == "small" || size == "medium" || size == "large";
+}
+
+int read_count(const std::string& text)
+{
+    if (text.empty()) {
+        return 0;
+    }
+    try {
+        std::size_t used = 0;
+        const int value = std::stoi(text, &used);
+        if (used != text.size()) {
+            return 0;
+        }
+        return value;
+    } catch (const std::exception&) {
+        return 0;
+    }
 }
 
 }  // namespace
@@ -148,14 +170,14 @@ void train_ai_api()
     drogon::app().registerHandler(
         "/ai/train",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-            const auto body = req->getJsonObject();
-            const std::string project_id = body ? (*body)["projectId"].asString() : "";
-            const std::string size = body ? (*body)["size"].asString() : "";
-            const int epochs = body ? (*body)["epochs"].asInt() : 0;
-            if (project_id.empty()) {
-                callback(json_error("프로젝트 번호가 없습니다.", drogon::k400BadRequest));
+            drogon::MultiPartParser parser;
+            if (parser.parse(req) != 0) {
+                callback(json_error("학습 파일을 읽지 못했습니다.", drogon::k400BadRequest));
                 return;
             }
+            const std::string size = parser.getParameter<std::string>("size");
+            const int epochs = read_count(parser.getParameter<std::string>("epochs"));
+            const int batch_size = read_count(parser.getParameter<std::string>("batchSize"));
             if (!allowed_size(size)) {
                 callback(json_error("모델 크기는 small, medium, large 중에서 고르세요.", drogon::k400BadRequest));
                 return;
@@ -164,13 +186,51 @@ void train_ai_api()
                 callback(json_error("epoch은 1 이상이어야 합니다.", drogon::k400BadRequest));
                 return;
             }
-            const int batch_size = body ? (*body)["batchSize"].asInt() : 0;
+            if (batch_size < 1) {
+                callback(json_error("batch size는 1 이상이어야 합니다.", drogon::k400BadRequest));
+                return;
+            }
+
+            const drogon::HttpFile* annotation = nullptr;
+            std::vector<const drogon::HttpFile*> images;
+            for (const drogon::HttpFile& file : parser.getFiles()) {
+                if (file.getItemName() == "annotation") {
+                    annotation = &file;
+                } else if (file.getItemName() == "images") {
+                    images.push_back(&file);
+                }
+            }
+            if (!annotation) {
+                callback(json_error("라벨 JSON이 없습니다.", drogon::k400BadRequest));
+                return;
+            }
+            if (images.empty()) {
+                callback(json_error("라벨된 이미지가 없습니다.", drogon::k400BadRequest));
+                return;
+            }
+
+            Json::Value paths;
+            Json::CharReaderBuilder builder;
+            const std::string paths_text = parser.getParameter<std::string>("paths");
+            std::string errors;
+            const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+            if (!reader->parse(paths_text.data(), paths_text.data() + paths_text.size(), &paths, &errors) || !paths.isArray()) {
+                callback(json_error("이미지 경로가 없습니다.", drogon::k400BadRequest));
+                return;
+            }
 
             static std::atomic<int> next_id{1};
+            const std::string id = std::to_string(next_id.fetch_add(1));
             Json::Value saved;
-            saved["id"] = std::to_string(next_id.fetch_add(1));
+            saved["id"] = id;
             try {
-                train_rfdetr(project_id, size, epochs, batch_size);
+                std::vector<std::string_view> image_bytes;
+                image_bytes.reserve(images.size());
+                for (const drogon::HttpFile* image : images) {
+                    image_bytes.push_back(image->fileContent());
+                }
+                const std::filesystem::path dataset = save_train_files(id, annotation->fileContent(), image_bytes, paths);
+                train_rfdetr(path_to_utf8(dataset), size, epochs, batch_size);
                 callback(drogon::HttpResponse::newHttpJsonResponse(saved));
             } catch (const std::exception& error) {
                 callback(json_error(error.what(), drogon::k500InternalServerError));

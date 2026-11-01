@@ -141,7 +141,7 @@ function App() {
   const saveChain = useRef(Promise.resolve())
   const pendingSave = useRef<{ handle: FileSystemDirectoryHandle; marks: Record<string, Mark[]> } | null>(null)
   const writeAsked = useRef(false)
-  const flushSaveRef = useRef<() => void>(() => {})
+  const flushSaveRef = useRef<() => Promise<void>>(async () => {})
   const projectSeen = useRef<string | null | undefined>(undefined)
 
   const modalOpen = location.pathname === '/new'
@@ -301,15 +301,16 @@ function App() {
     return () => window.removeEventListener('pagehide', onHide)
   }, [])
 
-  function flushFolderSave() {
+  function flushFolderSave(): Promise<void> {
     const pending = pendingSave.current
-    if (!pending) return
+    if (!pending) return saveChain.current
     window.clearTimeout(saveTimer.current)
     pendingSave.current = null
     saveChain.current = saveChain.current
       .catch(() => undefined)
       .then(() => writeFileMarks(pending.handle, pending.marks))
       .catch(() => undefined)
+    return saveChain.current
   }
   flushSaveRef.current = flushFolderSave
 
@@ -792,6 +793,14 @@ function App() {
             <RfdetrPanel
               project={active}
               images={images}
+              prepareTrain={async () => {
+                await flushSaveRef.current()
+                if (!active) return null
+                const handle = folderHandles.current.get(active.id) ?? null
+                if (!handle) return null
+                if (fileMarksRef.current) await writeFileMarks(handle, fileMarksRef.current)
+                return handle
+              }}
               labeledNames={
                 fileMarks
                   ? new Set(

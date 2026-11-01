@@ -19,11 +19,13 @@ export function RfdetrPanel({
   project,
   images,
   labeledNames,
+  prepareTrain,
 }: {
   project: Project | null
   images: ImageEntry[]
   onLabeled: (imageNames: string[]) => void
   labeledNames?: ReadonlySet<string>
+  prepareTrain: () => Promise<FileSystemDirectoryHandle | null>
 }) {
   const [tab, setTab] = useState<Tab>('train')
   const [size, setSize] = useState<RfdetrSize>('small')
@@ -52,11 +54,24 @@ export function RfdetrPanel({
     report('')
     setTraining(true)
     try {
+      const folder = await prepareTrain()
+      if (!folder) {
+        report('이미지 폴더를 먼저 열어 주세요.', true)
+        return
+      }
+      const annotationHandle = await folder.getFileHandle('_annotation_.json')
+      const annotation = await annotationHandle.getFile()
+      const labeledImages: { path: string; file: File }[] = []
+      for (const image of images) {
+        if (!labeled.has(image.name)) continue
+        labeledImages.push({ path: image.name, file: await image.handle.getFile() })
+      }
       await startTrainApi({
-        projectId: project.id,
         size,
         epochs,
         batchSize,
+        annotation,
+        images: labeledImages,
       })
       report('학습 요청을 보냈습니다.')
     } catch (error) {
