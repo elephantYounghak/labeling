@@ -10,6 +10,7 @@ backend/.cache/
 backend/build/
 backend/bin/
 backend/data/
+backend/.venv/
 downloads/
 
 compile_commands.json

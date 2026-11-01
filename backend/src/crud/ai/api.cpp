@@ -164,11 +164,17 @@ void train_ai_api()
                 callback(json_error("epoch은 1 이상이어야 합니다.", drogon::k400BadRequest));
                 return;
             }
+            const int batch_size = body ? (*body)["batchSize"].asInt() : 0;
 
             static std::atomic<int> next_id{1};
             Json::Value saved;
             saved["id"] = std::to_string(next_id.fetch_add(1));
-            callback(drogon::HttpResponse::newHttpJsonResponse(saved));
+            try {
+                train_rfdetr(project_id, size, epochs, batch_size);
+                callback(drogon::HttpResponse::newHttpJsonResponse(saved));
+            } catch (const std::exception& error) {
+                callback(json_error(error.what(), drogon::k500InternalServerError));
+            }
         },
         {drogon::Post});
 }
