@@ -14,6 +14,7 @@ import {
   hitVertex,
   labelAnchor,
   loadMarks,
+  maskOffset,
   pixelDistance,
   resizeBox,
   retargetMark,
@@ -28,6 +29,7 @@ import {
   type MarkPoint,
 } from './marks'
 import { detectApi, detectionsToMarks } from './detect'
+import { clearMaskCache, maskSheet } from './rle'
 import type { LabelClass, LabelTool } from './projects'
 
 type Frame = FrameSize & { left: number; top: number }
@@ -91,6 +93,9 @@ export function LabelStage({
   modelReady,
   folderPath,
   onSaved,
+  onEditStart,
+  initialMarks,
+  onFileMarks,
 }: {
   projectId: string
   imageName: string
@@ -108,6 +113,9 @@ export function LabelStage({
   modelReady: boolean
   folderPath: string
   onSaved: () => void
+  onEditStart: () => void
+  initialMarks: Mark[] | null
+  onFileMarks: (imageName: string, marks: Mark[]) => void
 }) {
   const imgRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -115,7 +123,8 @@ export function LabelStage({
   const brushStampRef = useRef<HTMLCanvasElement | null>(null)
   const [frame, setFrame] = useState<Frame>({ left: 0, top: 0, width: 0, height: 0 })
   const [natural, setNatural] = useState({ width: 0, height: 0 })
-  const [marks, setMarks] = useState<Mark[]>(() => loadMarks(projectId, imageName))
+  const [marks, setMarks] = useState<Mark[]>(() => initialMarks ?? loadMarks(projectId, imageName))
+  const onFileMarksRef = useRef(onFileMarks)
   const [draft, setDraft] = useState<MarkPoint[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [pointer, setPointer] = useState<MarkPoint | null>(null)
@@ -147,6 +156,7 @@ export function LabelStage({
   const onClassRef = useRef(onClassIndex)
   const onToolRef = useRef(onTool)
   const onSavedRef = useRef(onSaved)
+  const onEditStartRef = useRef(onEditStart)
   const brushRef = useRef(brushSize)
   const eraseRef = useRef(erasing)
   const opacityRef = useRef(opacity)
@@ -252,7 +262,9 @@ export function LabelStage({
     classesRef.current = classes
     onClassRef.current = onClassIndex
     onToolRef.current = onTool
+    onFileMarksRef.current = onFileMarks
     onSavedRef.current = onSaved
+    onEditStartRef.current = onEditStart
     brushRef.current = brushSize
     eraseRef.current = erasing
     opacityRef.current = opacity
@@ -309,7 +321,17 @@ export function LabelStage({
   }
 
   useEffect(() => {
+    return () => clearMaskCache()
+  }, [imageName])
+
+  const marksReady = useRef(false)
+  useEffect(() => {
+    if (!marksReady.current) {
+      marksReady.current = true
+      return
+    }
     saveMarks(projectId, imageName, marks)
+    onFileMarksRef.current(imageName, marks)
     onSavedRef.current()
   }, [projectId, imageName, marks])
 
@@ -584,17 +606,41 @@ export function LabelStage({
     }
 
     const alpha = opacityRef.current
+    const paintMask = (mark: Mark, markAlpha: number, outline: boolean) => {
+      if (!mark.mask) return
+      const sheet = maskSheet(mark.id, mark.color, mark.maskRev ?? 0, mark.mask)
+      if (!sheet) return
+      const shift = maskOffset(mark)
+      ctx.save()
+      ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0)
+      ctx.globalAlpha = markAlpha
+      ctx.drawImage(sheet, shift.x * box.width, shift.y * box.height, box.width, box.height)
+      if (outline) {
+        const bounds = boxOf(mark.points)
+        if (bounds) {
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 2
+          ctx.strokeRect(bounds.x * box.width, bounds.y * box.height, bounds.w * box.width, bounds.h * box.height)
+        }
+      }
+      ctx.restore()
+    }
     const current = gestureRef.current
     const extendTarget = marksRef.current.find((mark) => mark.id === extendRef.current && mark.tool === 'brush')
     const liveStroke = current?.kind === 'brush' && current.moved ? current.points : null
     for (const mark of marksRef.current) {
       if (mark.tool !== 'brush') continue
+      if (mark.mask) {
+        paintMask(mark, Math.max(alpha, 0.35), mark.id === selectedRef.current)
+        continue
+      }
       const extra = liveStroke && extendTarget?.id === mark.id ? [liveStroke] : undefined
       paintMark(mark.points, mark.cuts, mark.color, mark.size ?? 18, Math.max(alpha, 0.35), mark.id === selectedRef.current, extra)
     }
     if (current?.kind === 'move') {
       const ghost = marksRef.current.find((mark) => mark.id === current.id && mark.tool === 'brush')
-      if (ghost) paintMark(current.base, ghost.cuts, ghost.color, ghost.size ?? 18, Math.min(alpha, 0.18), false)
+      if (ghost && !ghost.mask) paintMark(current.base, ghost.cuts, ghost.color, ghost.size ?? 18, Math.min(alpha, 0.18), false)
     }
     if (liveStroke && !extendTarget) {
       paintMark([], undefined, labelRef.current?.color ?? '#ff6d2d', brushRef.current, Math.max(alpha, 0.65), false, [liveStroke])
@@ -661,6 +707,7 @@ export function LabelStage({
 
   function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return
+    onEditStartRef.current()
     if (performance.now() - closedAt.current < 280) return
     const point = eventPoint(event)
     if (!point) return

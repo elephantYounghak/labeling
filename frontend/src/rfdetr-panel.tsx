@@ -18,10 +18,12 @@ function errorText(error: unknown, fallback: string) {
 export function RfdetrPanel({
   project,
   images,
+  labeledNames,
 }: {
   project: Project | null
   images: ImageEntry[]
   onLabeled: (imageNames: string[]) => void
+  labeledNames?: ReadonlySet<string>
 }) {
   const [tab, setTab] = useState<Tab>('train')
   const [size, setSize] = useState<RfdetrSize>('small')
@@ -37,7 +39,7 @@ export function RfdetrPanel({
   const fileRef = useRef<HTMLInputElement>(null)
 
   const projectId = project?.id ?? ''
-  const labeled = projectId ? labeledImages(projectId) : new Set<string>()
+  const labeled = labeledNames ?? (projectId ? labeledImages(projectId) : new Set<string>())
   const labeledCount = images.filter((image) => labeled.has(image.name)).length
 
   function report(message: string, isError = false) {

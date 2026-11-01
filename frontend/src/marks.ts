@@ -1,6 +1,9 @@
 import type { LabelTool } from './projects'
+import { maskContains, punchMask, type RleMask } from './rle'
 
 export type MarkPoint = { x: number; y: number }
+
+export type MarkMask = RleMask & { box: Box }
 
 export type Mark = {
   id: string
@@ -10,6 +13,8 @@ export type Mark = {
   points: MarkPoint[]
   size?: number
   cuts?: number[]
+  mask?: MarkMask
+  maskRev?: number
 }
 
 export type Box = { x: number; y: number; w: number; h: number }
@@ -21,6 +26,22 @@ export type FrameSize = { width: number; height: number }
 
 function storageKey(projectId: string) {
   return `labeling.marks.${projectId}`
+}
+
+function readBox(value: unknown): Box | null {
+  if (!value || typeof value !== 'object') return null
+  const box = value as Partial<Box>
+  if (typeof box.x !== 'number' || typeof box.y !== 'number' || typeof box.w !== 'number' || typeof box.h !== 'number') return null
+  return { x: box.x, y: box.y, w: box.w, h: box.h }
+}
+
+function readMask(value: unknown): MarkMask | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const row = value as Partial<MarkMask>
+  const box = readBox(row.box)
+  if (!box || typeof row.counts !== 'string' || typeof row.height !== 'number' || typeof row.width !== 'number') return undefined
+  if (row.height <= 0 || row.width <= 0 || !row.counts) return undefined
+  return { height: row.height, width: row.width, counts: row.counts, box }
 }
 
 function readMark(value: unknown): Mark | null {
@@ -39,6 +60,7 @@ function readMark(value: unknown): Mark | null {
   const cuts = Array.isArray(row.cuts)
     ? row.cuts.filter((cut): cut is number => typeof cut === 'number' && cut > 0 && cut < points.length)
     : undefined
+  const mask = readMask(row.mask)
   return {
     id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
     tool: row.tool,
@@ -47,6 +69,7 @@ function readMark(value: unknown): Mark | null {
     points,
     size,
     ...(cuts && cuts.length > 0 ? { cuts } : {}),
+    ...(mask ? { mask } : {}),
   }
 }
 
@@ -63,20 +86,156 @@ export function brushStrokes(points: MarkPoint[], cuts?: number[]): MarkPoint[][
   return strokes.filter((stroke) => stroke.length > 0)
 }
 
-export function loadMarks(projectId: string, imageName: string): Mark[] {
+function readFileMark(value: unknown): Mark | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Record<string, unknown>
+  const color = typeof row.color === 'string' ? row.color : '#ff6d2d'
+  return readMark({ ...row, color })
+}
+
+function addMark(grouped: Record<string, Mark[]>, image: string, mark: Mark | null) {
+  const key = image.trim().replace(/\\/g, '/')
+  if (!key || !mark) return
+  const list = grouped[key] ?? []
+  list.push(mark)
+  grouped[key] = list
+}
+
+export function marksByImage(data: unknown): Record<string, Mark[]> {
+  const grouped: Record<string, Mark[]> = {}
+  if (!data || typeof data !== 'object') return grouped
+  const root = data as Record<string, unknown>
+  const source = 'annotations' in root ? root.annotations : root
+
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as Record<string, unknown>
+      const image = typeof row.image === 'string' ? row.image : typeof row.file === 'string' ? row.file : ''
+      addMark(grouped, image, readFileMark(item))
+    }
+    return grouped
+  }
+
+  if (source && typeof source === 'object') {
+    for (const [image, value] of Object.entries(source)) {
+      if (!Array.isArray(value)) continue
+      for (const item of value) addMark(grouped, image, readFileMark(item))
+    }
+  }
+  return grouped
+}
+
+const MASK_COLORS = ['#ff6d2d', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#ef4444', '#14b8a6', '#ec4899']
+
+export function marksFromCoco(data: unknown): Record<string, Mark[]> {
+  const grouped: Record<string, Mark[]> = {}
+  if (!data || typeof data !== 'object') return grouped
+  const root = data as {
+    images?: unknown
+    annotations?: unknown
+    categories?: unknown
+  }
+  if (!Array.isArray(root.images) || !Array.isArray(root.annotations)) return grouped
+
+  const images = new Map<number, { file: string; width: number; height: number }>()
+  for (const item of root.images) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as { id?: unknown; file_name?: unknown; width?: unknown; height?: unknown }
+    if (typeof row.id !== 'number' || typeof row.file_name !== 'string') continue
+    if (typeof row.width !== 'number' || typeof row.height !== 'number' || row.width <= 0 || row.height <= 0) continue
+    images.set(row.id, { file: row.file_name.replace(/\\/g, '/'), width: row.width, height: row.height })
+  }
+
+  const names = new Map<number, string>()
+  if (Array.isArray(root.categories)) {
+    for (const item of root.categories) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as { id?: unknown; name?: unknown }
+      if (typeof row.id !== 'number' || typeof row.name !== 'string' || !row.name) continue
+      names.set(row.id, row.name)
+    }
+  }
+  const colors = new Map<number, string>()
+  let colorIndex = 0
+  for (const id of names.keys()) {
+    colors.set(id, MASK_COLORS[colorIndex % MASK_COLORS.length])
+    colorIndex += 1
+  }
+
+  for (const item of root.annotations) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as {
+      id?: unknown
+      image_id?: unknown
+      category_id?: unknown
+      bbox?: unknown
+      segmentation?: unknown
+    }
+    if (typeof row.image_id !== 'number') continue
+    const image = images.get(row.image_id)
+    const segmentation = row.segmentation
+    if (!image || !segmentation || typeof segmentation !== 'object' || Array.isArray(segmentation)) continue
+    const rle = segmentation as { size?: unknown; counts?: unknown }
+    if (typeof rle.counts !== 'string' || !Array.isArray(rle.size) || rle.size.length < 2) continue
+    const height = rle.size[0]
+    const width = rle.size[1]
+    if (typeof height !== 'number' || typeof width !== 'number' || height <= 0 || width <= 0) continue
+    if (!Array.isArray(row.bbox) || row.bbox.length < 4) continue
+    const [x, y, w, h] = row.bbox
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof w !== 'number' || typeof h !== 'number') continue
+    const category = typeof row.category_id === 'number' ? row.category_id : -1
+    const box = {
+      x: x / image.width,
+      y: y / image.height,
+      w: w / image.width,
+      h: h / image.height,
+    }
+    addMark(grouped, image.file, {
+      id: typeof row.id === 'number' ? `coco-${row.id}` : crypto.randomUUID(),
+      tool: 'brush',
+      name: names.get(category) ?? 'object',
+      color: colors.get(category) ?? MASK_COLORS[0],
+      points: [
+        { x: box.x, y: box.y },
+        { x: box.x + box.w, y: box.y + box.h },
+      ],
+      mask: { height, width, counts: rle.counts, box },
+    })
+  }
+  return grouped
+}
+
+export function marksForImage(all: Record<string, Mark[]>, imageName: string): Mark[] {
+  const exact = all[imageName]
+  if (exact) return exact
+  const base = imageName.slice(imageName.lastIndexOf('/') + 1)
+  if (base !== imageName && all[base]) return all[base]
+  return []
+}
+
+export function loadStoredMarks(projectId: string): Record<string, Mark[]> {
   try {
     const raw = localStorage.getItem(storageKey(projectId))
-    if (!raw) return []
+    if (!raw) return {}
     const all = JSON.parse(raw) as Record<string, unknown>
-    const list = all[imageName]
-    if (!Array.isArray(list)) return []
-    return list.flatMap((item) => {
-      const mark = readMark(item)
-      return mark ? [mark] : []
-    })
+    const grouped: Record<string, Mark[]> = {}
+    for (const [name, value] of Object.entries(all)) {
+      if (!Array.isArray(value)) continue
+      const marks = value.flatMap((item) => {
+        const mark = readMark(item)
+        return mark ? [mark] : []
+      })
+      if (marks.length > 0) grouped[name] = marks
+    }
+    return grouped
   } catch {
-    return []
+    return {}
   }
+}
+
+export function loadMarks(projectId: string, imageName: string): Mark[] {
+  return loadStoredMarks(projectId)[imageName] ?? []
 }
 
 export function labeledImages(projectId: string): Set<string> {
@@ -320,6 +479,12 @@ export function eraseBrush(marks: Mark[], center: MarkPoint, radiusPx: number, f
       next.push(mark)
       continue
     }
+    if (mark.mask) {
+      const filled = punchMask(mark.id, mark.mask, maskOffset(mark), center, radiusPx, frame)
+      if (filled === null) next.push(mark)
+      else if (filled > 0) next.push({ ...mark, maskRev: (mark.maskRev ?? 0) + 1 })
+      continue
+    }
     const reach = radiusPx + (mark.size ?? 18) / 2
     const kept: MarkPoint[][] = []
     for (const stroke of brushStrokes(mark.points, mark.cuts)) {
@@ -352,7 +517,15 @@ export function eraseBrush(marks: Mark[], center: MarkPoint, radiusPx: number, f
   return next
 }
 
+export function maskOffset(mark: Mark) {
+  const origin = mark.mask?.box
+  const current = boxOf(mark.points)
+  if (!origin || !current) return { x: 0, y: 0 }
+  return { x: current.x - origin.x, y: current.y - origin.y }
+}
+
 function hits(mark: Mark, point: MarkPoint, frame?: FrameSize) {
+  if (mark.mask) return maskContains(mark.id, mark.mask, maskOffset(mark), point, frame)
   if (mark.tool === 'bbox') {
     const box = boxOf(mark.points)
     if (!box) return false

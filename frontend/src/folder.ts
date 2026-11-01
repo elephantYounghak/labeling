@@ -1,3 +1,59 @@
+import { marksByImage, marksFromCoco, type Mark } from './marks'
+
+const OWN_ANNOTATION = '_annotation_.json'
+const COCO_ANNOTATION = '_annotations.coco.json'
+
+function isCoco(data: unknown) {
+  if (!data || typeof data !== 'object') return false
+  const root = data as { images?: unknown; annotations?: unknown }
+  return Array.isArray(root.images) && Array.isArray(root.annotations)
+}
+
+function isSaved(data: unknown) {
+  return Boolean(data && typeof data === 'object' && (data as { saved?: unknown }).saved === true)
+}
+
+async function readJson(dir: FileSystemDirectoryHandle, name: string): Promise<unknown | undefined> {
+  try {
+    const handle = await dir.getFileHandle(name)
+    const file = await handle.getFile()
+    return JSON.parse(await file.text()) as unknown
+  } catch (error) {
+    if (error instanceof SyntaxError) return null
+    return undefined
+  }
+}
+
+export async function readFileMarks(dir: FileSystemDirectoryHandle): Promise<Record<string, Mark[]> | null> {
+  const own = await readJson(dir, OWN_ANNOTATION)
+  if (isSaved(own)) return marksByImage(own)
+  const coco = await readJson(dir, COCO_ANNOTATION)
+  if (coco) return isCoco(coco) ? marksFromCoco(coco) : marksByImage(coco)
+  if (own === null || coco === null) return {}
+  if (own) return marksByImage(own)
+  return null
+}
+
+export async function writeFileMarks(dir: FileSystemDirectoryHandle, marks: Record<string, Mark[]>): Promise<void> {
+  const annotations = Object.entries(marks).flatMap(([image, list]) =>
+    list.map((mark) => ({
+      image,
+      id: mark.id,
+      tool: mark.tool,
+      name: mark.name,
+      color: mark.color,
+      points: mark.points,
+      ...(mark.size ? { size: mark.size } : {}),
+      ...(mark.cuts && mark.cuts.length > 0 ? { cuts: mark.cuts } : {}),
+      ...(mark.mask ? { mask: mark.mask } : {}),
+    })),
+  )
+  const handle = await dir.getFileHandle(OWN_ANNOTATION, { create: true })
+  const writable = await handle.createWritable()
+  await writable.write(`${JSON.stringify({ saved: true, annotations }, null, 2)}\n`)
+  await writable.close()
+}
+
 export type ListedItem = {
   path: string
   kind: 'file' | 'directory'

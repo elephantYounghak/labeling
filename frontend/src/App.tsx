@@ -5,10 +5,13 @@ import {
   allowFolder,
   listImageHandles,
   loadFolderHandle,
+  readFileMarks,
   readFolderImages,
   saveFolderHandle,
+  writeFileMarks,
   type ImageEntry,
 } from './folder'
+import { loadStoredMarks, marksForImage, type Mark } from './marks'
 import { LabelStage } from './label'
 import { MODELS, loadModelApi, loadSelectedModelId, saveSelectedModelId } from './models'
 import {
@@ -122,6 +125,7 @@ function App() {
   const [imagesBusy, setImagesBusy] = useState(false)
   const [imagesReady, setImagesReady] = useState(false)
   const [needsFolder, setNeedsFolder] = useState(false)
+  const [fileMarks, setFileMarks] = useState<Record<string, Mark[]> | null>(null)
   const [labelClass, setLabelClass] = useState(0)
   const [modelId, setModelId] = useState(loadSelectedModelId)
   const [loadedModelIds, setLoadedModelIds] = useState<string[]>([])
@@ -132,9 +136,22 @@ function App() {
   const pickedFolder = useRef<FileSystemDirectoryHandle | null>(null)
   const folderHandles = useRef(new Map<string, FileSystemDirectoryHandle>())
   const imageUrlRef = useRef('')
+  const fileMarksRef = useRef<Record<string, Mark[]> | null>(null)
+  const saveTimer = useRef(0)
+  const saveChain = useRef(Promise.resolve())
+  const pendingSave = useRef<{ handle: FileSystemDirectoryHandle; marks: Record<string, Mark[]> } | null>(null)
+  const writeAsked = useRef(false)
+  const flushSaveRef = useRef<() => void>(() => {})
+  const projectSeen = useRef<string | null | undefined>(undefined)
 
   const modalOpen = location.pathname === '/new'
   const activeId = route.projectId
+  if (projectSeen.current !== activeId) {
+    projectSeen.current = activeId
+    fileMarksRef.current = null
+    writeAsked.current = false
+    setFileMarks(null)
+  }
   const imageIndex = route.imageNumber - 1
   const active = projects.find((project) => project.id === activeId) ?? null
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0]
@@ -189,6 +206,8 @@ function App() {
   useEffect(() => {
     if (!activeId) {
       setImages([])
+      fileMarksRef.current = null
+      setFileMarks(null)
       setNeedsFolder(false)
       setImagesBusy(false)
       setImagesReady(false)
@@ -204,6 +223,8 @@ function App() {
       const known = folderHandles.current.get(projectId) ?? (await loadFolderHandle(projectId))
       if (cancelled) return
       if (!known) {
+        fileMarksRef.current = null
+        setFileMarks(null)
         setNeedsFolder(true)
         setImagesBusy(false)
         setImagesReady(true)
@@ -211,19 +232,28 @@ function App() {
       }
       folderHandles.current.set(projectId, known)
       const listed = await readFolderImages(known)
+      const marks = listed ? await readFileMarks(known) : null
       if (cancelled) return
       if (!listed) {
+        fileMarksRef.current = null
+        setFileMarks(null)
         setNeedsFolder(true)
         setImagesBusy(false)
         setImagesReady(true)
         return
       }
+      const edited = fileMarksRef.current
+      const merged = edited ? { ...(marks ?? {}), ...edited } : marks
+      fileMarksRef.current = merged
+      setFileMarks(merged)
       setImages(listed)
       setNeedsFolder(false)
       setImagesBusy(false)
       setImagesReady(true)
     })().catch(() => {
       if (!cancelled) {
+        fileMarksRef.current = null
+        setFileMarks(null)
         setNeedsFolder(true)
         setImagesBusy(false)
         setImagesReady(true)
@@ -263,6 +293,49 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    function onHide() {
+      flushSaveRef.current()
+    }
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [])
+
+  function flushFolderSave() {
+    const pending = pendingSave.current
+    if (!pending) return
+    window.clearTimeout(saveTimer.current)
+    pendingSave.current = null
+    saveChain.current = saveChain.current
+      .catch(() => undefined)
+      .then(() => writeFileMarks(pending.handle, pending.marks))
+      .catch(() => undefined)
+  }
+  flushSaveRef.current = flushFolderSave
+
+  function scheduleFolderSave(handle: FileSystemDirectoryHandle, marks: Record<string, Mark[]>) {
+    pendingSave.current = { handle, marks }
+    window.clearTimeout(saveTimer.current)
+    saveTimer.current = window.setTimeout(flushFolderSave, 250)
+  }
+
+  function persistImageMarks(projectId: string, name: string, next: Mark[]) {
+    const base = fileMarksRef.current ?? loadStoredMarks(projectId)
+    const merged = { ...base, [name]: next }
+    fileMarksRef.current = merged
+    setFileMarks(merged)
+    const handle = folderHandles.current.get(projectId)
+    if (handle) scheduleFolderSave(handle, merged)
+  }
+
+  function askWrite(handle: FileSystemDirectoryHandle) {
+    if (writeAsked.current) return
+    writeAsked.current = true
+    void handle.requestPermission({ mode: 'readwrite' }).then((state) => {
+      if (state !== 'granted') writeAsked.current = false
+    })
+  }
+
   function persist(next: Project[]) {
     setProjects(next)
     saveProjects(next)
@@ -289,8 +362,9 @@ function App() {
     setError('')
     let selected = ''
     try {
-      const handle = await window.showDirectoryPicker()
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
       pickedFolder.current = handle
+      askWrite(handle)
       selected = handle.name
       setPath(selected)
     } catch (error) {
@@ -372,16 +446,23 @@ function App() {
     if (!active || picking || imagesBusy) return
     setPicking(true)
     try {
-      const handle = await window.showDirectoryPicker()
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
       folderHandles.current.set(active.id, handle)
+      writeAsked.current = false
+      askWrite(handle)
       await saveFolderHandle(active.id, handle).catch(() => {})
       patchActive({ path: handle.name })
       const listed = await readFolderImages(handle)
+      const marks = listed ? await readFileMarks(handle) : null
+      fileMarksRef.current = marks
+      setFileMarks(marks)
       setImages(listed ?? [])
       setNeedsFolder(!listed)
       if (listed && imageIndex !== 0) navigate(projectPath(active.id), { replace: true })
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        fileMarksRef.current = null
+        setFileMarks(null)
         setNeedsFolder(true)
       }
     } finally {
@@ -420,14 +501,21 @@ function App() {
     try {
       let handle = folderHandles.current.get(active.id) ?? (await loadFolderHandle(active.id))
       if (handle && !(await allowFolder(handle))) handle = null
-      if (!handle) handle = await window.showDirectoryPicker()
+      if (!handle) handle = await window.showDirectoryPicker({ mode: 'readwrite' })
       folderHandles.current.set(active.id, handle)
+      writeAsked.current = false
+      askWrite(handle)
       void saveFolderHandle(active.id, handle).catch(() => {})
+      const marks = await readFileMarks(handle)
+      fileMarksRef.current = marks
+      setFileMarks(marks)
       setImages(await listImageHandles(handle))
       if (imageIndex !== 0) navigate(projectPath(active.id), { replace: true })
       setNeedsFolder(false)
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        fileMarksRef.current = null
+        setFileMarks(null)
         setNeedsFolder(true)
       }
     } finally {
@@ -511,6 +599,12 @@ function App() {
                         modelReady={modelReady}
                         folderPath={active.path}
                         onSaved={() => setLabelsTick((tick) => tick + 1)}
+                        onEditStart={() => {
+                          const handle = folderHandles.current.get(active.id)
+                          if (handle) askWrite(handle)
+                        }}
+                        initialMarks={fileMarks ? marksForImage(fileMarks, currentImage.name) : null}
+                        onFileMarks={(name, next) => persistImageMarks(active.id, name, next)}
                       />
                     ) : (
                       <p className="viewer-note">이미지를 읽는 중…</p>
@@ -698,6 +792,15 @@ function App() {
             <RfdetrPanel
               project={active}
               images={images}
+              labeledNames={
+                fileMarks
+                  ? new Set(
+                      images
+                        .filter((image) => marksForImage(fileMarks, image.name).length > 0)
+                        .map((image) => image.name),
+                    )
+                  : undefined
+              }
               onLabeled={(names) => {
                 if (names.includes(currentNameRef.current)) setStageVersion((version) => version + 1)
                 setLabelsTick((tick) => tick + 1)
