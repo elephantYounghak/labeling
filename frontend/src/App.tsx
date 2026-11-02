@@ -19,7 +19,6 @@ import {
   createProjectApi,
   formatDate,
   loadProjects,
-  uploadFolderApi,
   saveProjects,
   type LabelClass,
   type LabelTool,
@@ -361,26 +360,14 @@ function App() {
   async function onPickFolder() {
     if (picking || busy) return
     setError('')
-    let selected = ''
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
       pickedFolder.current = handle
       askWrite(handle)
-      selected = handle.name
-      setPath(selected)
+      setPath(handle.name)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       setError('폴더를 선택하지 못했습니다.')
-      return
-    }
-    setPicking(true)
-    try {
-      const uploaded = await uploadFolderApi(selected)
-      if (uploaded) setPath(uploaded)
-    } catch {
-      setError('백엔드에 연결하지 못했습니다. backend를 실행한 뒤 폴더를 선택해 주세요.')
-    } finally {
-      setPicking(false)
     }
   }
 

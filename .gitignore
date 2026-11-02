@@ -11,6 +11,8 @@ backend/build/
 backend/bin/
 backend/data/
 backend/.venv/
+__pycache__/
+*.py[cod]
 downloads/
 
 compile_commands.json

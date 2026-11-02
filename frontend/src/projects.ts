@@ -88,19 +88,6 @@ export function formatDate(iso: string): string {
   })
 }
 
-export async function uploadFolderApi(currentPath: string): Promise<string> {
-  const res = await fetch('/io/upload-folder', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: currentPath }),
-  })
-  if (!res.ok) {
-    throw new Error('폴더 선택 API가 실패했습니다.')
-  }
-  const data = (await res.json()) as { path?: unknown }
-  return typeof data.path === 'string' ? data.path : ''
-}
-
 export async function createProjectApi(project: Project): Promise<string> {
   const res = await fetch('/project/upload', {
     method: 'POST',

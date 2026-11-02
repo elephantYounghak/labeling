@@ -1,5 +1,4 @@
 #include "crud/ai/api.h"
-#include "crud/io/api.h"
 #include "crud/labeling/api.h"
 #include "crud/project/api.h"
 #include "utils/server.h"
@@ -13,7 +12,6 @@ int main()
     upload_project_api();
     upload_labeling_api();
     update_labeling_api();
-    upload_folder_api();
     load_ai_api();
     detect_ai_api();
     upload_ai_api();

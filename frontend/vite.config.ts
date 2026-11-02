@@ -8,7 +8,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/io': 'http://127.0.0.1:18080',
       '/project': {
         target: 'http://127.0.0.1:18080',
         bypass(req) {
