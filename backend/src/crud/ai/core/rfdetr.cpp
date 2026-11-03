@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -255,18 +256,25 @@ ModelOutputs match_outputs(Ort::Session& model)
     throw std::runtime_error("RF-DETR 출력 형식을 읽지 못했습니다.");
 }
 
-std::vector<Point> mask_points(const float* logits, int mask_height, int mask_width, int image_width, int image_height)
+Mask mask_from_logits(const float* logits, int mask_height, int mask_width, int image_width, int image_height)
 {
     cv::Mat low(mask_height, mask_width, CV_32FC1, const_cast<float*>(logits));
     cv::Mat resized;
     cv::resize(low, resized, cv::Size(image_width, image_height), 0, 0, cv::INTER_LINEAR);
     cv::Mat binary;
     cv::compare(resized, 0.f, binary, cv::CMP_GT);
+    Mask mask;
+    if (cv::countNonZero(binary) == 0) {
+        return {};
+    }
+    mask.counts = sam3::coco_counts(binary);
+    mask.width = image_width;
+    mask.height = image_height;
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     if (contours.empty()) {
-        return {};
+        return mask;
     }
 
     size_t best = 0;
@@ -285,16 +293,13 @@ std::vector<Point> mask_points(const float* logits, int mask_height, int mask_wi
     if (approx.size() >= 3) {
         shape = std::move(approx);
     }
-    if (shape.size() < 3) {
-        return {};
+    if (shape.size() >= 3) {
+        mask.points.reserve(shape.size());
+        for (const cv::Point& point : shape) {
+            mask.points.push_back({static_cast<float>(point.x), static_cast<float>(point.y)});
+        }
     }
-
-    std::vector<Point> points;
-    points.reserve(shape.size());
-    for (const cv::Point& point : shape) {
-        points.push_back({static_cast<float>(point.x), static_cast<float>(point.y)});
-    }
-    return points;
+    return mask;
 }
 
 }  // namespace
@@ -382,18 +387,19 @@ Output rfdetr::detect(const RfdetrInput& input)
         if (item.x2 <= item.x1 || item.y2 <= item.y1) {
             continue;
         }
-        output.boxes.push_back(item);
         if (masks == nullptr) {
+            output.boxes.push_back(item);
             continue;
         }
         const size_t offset = static_cast<size_t>(detection.query) * mask_height * mask_width;
-        Mask mask;
+        Mask mask = mask_from_logits(masks + offset, mask_height, mask_width, input.image.cols, input.image.rows);
+        if (mask.counts.empty() && mask.points.empty()) {
+            continue;
+        }
         mask.score = detection.score;
         mask.class_id = detection.class_id;
-        mask.points = mask_points(masks + offset, mask_height, mask_width, input.image.cols, input.image.rows);
-        if (!mask.points.empty()) {
-            output.masks.push_back(std::move(mask));
-        }
+        output.boxes.push_back(item);
+        output.masks.push_back(std::move(mask));
     }
     return output;
 }

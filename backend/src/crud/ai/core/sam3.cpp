@@ -11,6 +11,58 @@ namespace sam3 {
 
 namespace {
 
+int64_t shift_five(int64_t value)
+{
+    if (value >= 0) {
+        return value >> 5;
+    }
+    return ~((~value) >> 5);
+}
+
+}  // namespace
+
+std::string coco_counts(const cv::Mat& binary)
+{
+    std::vector<uint32_t> runs;
+    int previous = 0;
+    uint32_t run = 0;
+    for (int x = 0; x < binary.cols; ++x) {
+        for (int y = 0; y < binary.rows; ++y) {
+            const int on = binary.at<uint8_t>(y, x) != 0 ? 1 : 0;
+            if (on == previous) {
+                ++run;
+                continue;
+            }
+            runs.push_back(run);
+            run = 1;
+            previous = on;
+        }
+    }
+    runs.push_back(run);
+
+    std::string encoded;
+    for (size_t index = 0; index < runs.size(); ++index) {
+        int64_t value = runs[index];
+        if (index > 2) {
+            value -= static_cast<int64_t>(runs[index - 2]);
+        }
+        bool more = true;
+        while (more) {
+            char chunk = static_cast<char>(value & 0x1f);
+            value = shift_five(value);
+            const bool negative = (chunk & 0x10) != 0;
+            more = negative ? value != -1 : value != 0;
+            if (more) {
+                chunk = static_cast<char>(chunk | 0x20);
+            }
+            encoded.push_back(static_cast<char>(chunk + 48));
+        }
+    }
+    return encoded;
+}
+
+namespace {
+
 Ort::Env& ort_env()
 {
     static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "sam3");
@@ -65,9 +117,22 @@ void append_detection(Output& output, const Prediction& prediction, const std::s
         output.boxes.push_back({prediction.x1, prediction.y1, prediction.x2, prediction.y2, prediction.score});
         return;
     }
+    if (tool == "brush") {
+        if (prediction.mask.empty() || cv::countNonZero(prediction.mask) == 0) {
+            return;
+        }
+        output.boxes.push_back({prediction.x1, prediction.y1, prediction.x2, prediction.y2, prediction.score});
+        Mask mask;
+        mask.score = prediction.score;
+        mask.counts = coco_counts(prediction.mask);
+        mask.width = prediction.mask.cols;
+        mask.height = prediction.mask.rows;
+        output.masks.push_back(std::move(mask));
+        return;
+    }
     Mask mask;
     mask.score = prediction.score;
-    mask.points = contour_points(prediction.mask, tool == "polygon");
+    mask.points = contour_points(prediction.mask, true);
     if (!mask.points.empty()) {
         output.masks.push_back(std::move(mask));
     }
@@ -206,6 +271,11 @@ Json::Value output_json(const Output& output)
         Json::Value item(Json::objectValue);
         item["points"] = std::move(points);
         item["score"] = mask.score;
+        if (!mask.counts.empty()) {
+            item["counts"] = mask.counts;
+            item["width"] = mask.width;
+            item["height"] = mask.height;
+        }
         masks.append(std::move(item));
     }
     result["boxes"] = std::move(boxes);

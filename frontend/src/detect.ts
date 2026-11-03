@@ -54,18 +54,22 @@ function readBoxes(value: unknown): RawBox[] {
   })
 }
 
-function readMasks(value: unknown): { points: MarkPoint[]; name: string }[] {
+function readMasks(value: unknown): { points: MarkPoint[]; name: string; counts: string; width: number; height: number }[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((item) => {
     if (!item || typeof item !== 'object') return []
-    const row = item as { points?: unknown; name?: unknown }
-    if (!Array.isArray(row.points)) return []
-    const points = row.points.flatMap((point) => {
-      const next = readPoint(point)
-      return next ? [next] : []
-    })
-    if (points.length < 3) return []
-    return [{ points, name: nameOf(row.name) }]
+    const row = item as { points?: unknown; name?: unknown; counts?: unknown; width?: unknown; height?: unknown }
+    const points = Array.isArray(row.points)
+      ? row.points.flatMap((point) => {
+          const next = readPoint(point)
+          return next ? [next] : []
+        })
+      : []
+    const counts = typeof row.counts === 'string' ? row.counts : ''
+    const width = numberOf(row.width) ?? 0
+    const height = numberOf(row.height) ?? 0
+    if (points.length < 3 && !counts) return []
+    return [{ points, name: nameOf(row.name), counts, width, height }]
   })
 }
 
@@ -108,8 +112,33 @@ export function detectionsToMarks(
   const masks = readMasks(row.masks)
   const marks: Mark[] = []
 
-  if ((tool === 'polygon' || tool === 'brush') && masks.length > 0) {
+  if (tool === 'brush' && masks.some((mask) => mask.counts)) {
+    masks.forEach((mask, index) => {
+      if (!mask.counts || mask.width <= 0 || mask.height <= 0) return
+      const box = boxes[index]
+      const pixel = box ? pixelSpace([box.x1, box.y1, box.x2, box.y2]) : false
+      const x1 = box ? unit(Math.min(box.x1, box.x2), natural.width, pixel) : 0
+      const y1 = box ? unit(Math.min(box.y1, box.y2), natural.height, pixel) : 0
+      const x2 = box ? unit(Math.max(box.x1, box.x2), natural.width, pixel) : 1
+      const y2 = box ? unit(Math.max(box.y1, box.y2), natural.height, pixel) : 1
+      if (x2 - x1 <= 0 || y2 - y1 <= 0) return
+      const region = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
+      const name = mask.name || fallbackName
+      marks.push({
+        id: crypto.randomUUID(),
+        tool: 'brush',
+        name,
+        color: colorOf(name),
+        points: boxPoints(region),
+        mask: { width: mask.width, height: mask.height, counts: mask.counts, box: region },
+      })
+    })
+    return marks
+  }
+
+  if (tool === 'polygon' && masks.length > 0) {
     for (const mask of masks) {
+      if (mask.points.length < 3) continue
       const pixel = pixelSpace(mask.points.flatMap((point) => [point.x, point.y]))
       const name = mask.name || fallbackName
       marks.push({

@@ -44,6 +44,9 @@ struct Mask
     std::vector<Point> points;
     float score = 0;
     int class_id = -1;
+    std::string counts;
+    int width = 0;
+    int height = 0;
 };
 
 struct Output

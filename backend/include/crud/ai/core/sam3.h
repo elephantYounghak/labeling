@@ -31,6 +31,7 @@ Ort::SessionOptions cpu_options();
 Ort::SessionOptions gpu_options();
 std::unique_ptr<Ort::Session> open_session(const std::filesystem::path& path, const Ort::SessionOptions& options);
 std::string normalized_tool(const std::string& tool);
+std::string coco_counts(const cv::Mat& binary);
 cv::Mat input_rgb(const SamInput& input);
 std::vector<uint8_t> rgb_to_chw1008(const cv::Mat& rgb);
 Ort::Value view_float(const Ort::MemoryInfo& memory, Ort::Value& source);
