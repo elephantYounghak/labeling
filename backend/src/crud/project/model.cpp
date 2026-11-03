@@ -22,6 +22,6 @@ void delete_project(const std::string* id)
     std::string id_str = *id;
     soci::session db = get_db();
     db << "DELETE FROM dbo.projects WHERE id = :id",
-        soci::use(id, "id");
+    soci::use(id_str, "id");
 }
 

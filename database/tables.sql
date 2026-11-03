@@ -62,7 +62,7 @@ BEGIN
         tool NVARCHAR(32) NOT NULL,
         opacity FLOAT NOT NULL CONSTRAINT DF_labeling_opacity DEFAULT 0.4,
         classes NVARCHAR(MAX) NOT NULL CONSTRAINT DF_labeling_classes DEFAULT N'[]',
-        CONSTRAINT FK_labeling_projects FOREIGN KEY (project_id) REFERENCES dbo.projects(id)
+        CONSTRAINT FK_labeling_projects FOREIGN KEY (project_id) REFERENCES dbo.projects(id) ON DELETE CASCADE
     );
 END
 ELSE IF COL_LENGTH(N'dbo.labeling', N'classes') IS NULL
