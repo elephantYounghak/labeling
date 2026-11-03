@@ -8,7 +8,7 @@ SamInput make_sam_input(std::string_view bytes, float x, float y, const std::str
     return sam3::make_input(bytes, x, y, tool, word);
 }
 
-Json::Value sam_output_json(const SamOutput& output)
+Json::Value sam_output_json(const Output& output)
 {
     return sam3::output_json(output);
 }
@@ -18,7 +18,7 @@ void load_sam_text()
     sam3_text::load();
 }
 
-SamOutput detect_sam_text(const SamInput& input)
+Output detect_sam_text(const SamInput& input)
 {
     return sam3_text::detect(input);
 }
@@ -28,7 +28,7 @@ void load_sam_point()
     sam3_point::load();
 }
 
-SamOutput detect_sam_point(const SamInput& input)
+Output detect_sam_point(const SamInput& input)
 {
     return sam3_point::detect(input);
 }

@@ -5,6 +5,6 @@
 namespace sam3_point {
 
 void load();
-SamOutput detect(const SamInput& input);
+Output detect(const SamInput& input);
 
 }  // namespace sam3_point

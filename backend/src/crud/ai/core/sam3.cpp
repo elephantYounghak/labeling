@@ -24,7 +24,7 @@ void require_file(const fs::path& path)
     }
 }
 
-std::vector<SamPoint> contour_points(const cv::Mat& mask, bool simplify)
+std::vector<Point> contour_points(const cv::Mat& mask, bool simplify)
 {
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -51,7 +51,7 @@ std::vector<SamPoint> contour_points(const cv::Mat& mask, bool simplify)
         }
     }
 
-    std::vector<SamPoint> points;
+    std::vector<Point> points;
     points.reserve(shape.size());
     for (const cv::Point& point : shape) {
         points.push_back({static_cast<float>(point.x), static_cast<float>(point.y)});
@@ -59,13 +59,13 @@ std::vector<SamPoint> contour_points(const cv::Mat& mask, bool simplify)
     return points;
 }
 
-void append_detection(SamOutput& output, const Prediction& prediction, const std::string& tool)
+void append_detection(Output& output, const Prediction& prediction, const std::string& tool)
 {
     if (tool == "bbox") {
         output.boxes.push_back({prediction.x1, prediction.y1, prediction.x2, prediction.y2, prediction.score});
         return;
     }
-    SamMask mask;
+    Mask mask;
     mask.score = prediction.score;
     mask.points = contour_points(prediction.mask, tool == "polygon");
     if (!mask.points.empty()) {
@@ -110,7 +110,7 @@ std::string normalized_tool(const std::string& tool)
     throw std::runtime_error("도구는 bbox, polygon, brush 중 하나여야 합니다.");
 }
 
-cv::Mat input_rgb(const SamInput& input)
+cv::Mat input_rgb(const Input& input)
 {
     if (input.image.empty()) {
         throw std::runtime_error("이미지가 없습니다.");
@@ -161,18 +161,18 @@ Ort::Value view_bool(const Ort::MemoryInfo& memory, Ort::Value& source)
         shape.size());
 }
 
-SamOutput to_output(const std::vector<Prediction>& predictions, const std::string& tool)
+Output to_output(const std::vector<Prediction>& predictions, const std::string& tool)
 {
-    SamOutput output;
+    Output output;
     for (const Prediction& prediction : predictions) {
         append_detection(output, prediction, tool);
     }
     return output;
 }
 
-SamInput make_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word)
+Input make_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word)
 {
-    SamInput input;
+    Input input;
     input.image = image_from_bytes(bytes);
     input.x = x;
     input.y = y;
@@ -181,11 +181,11 @@ SamInput make_input(std::string_view bytes, float x, float y, const std::string&
     return input;
 }
 
-Json::Value output_json(const SamOutput& output)
+Json::Value output_json(const Output& output)
 {
     Json::Value result(Json::objectValue);
     Json::Value boxes(Json::arrayValue);
-    for (const SamBox& box : output.boxes) {
+    for (const Box& box : output.boxes) {
         Json::Value item(Json::objectValue);
         item["x1"] = box.x1;
         item["y1"] = box.y1;
@@ -195,9 +195,9 @@ Json::Value output_json(const SamOutput& output)
         boxes.append(std::move(item));
     }
     Json::Value masks(Json::arrayValue);
-    for (const SamMask& mask : output.masks) {
+    for (const Mask& mask : output.masks) {
         Json::Value points(Json::arrayValue);
-        for (const SamPoint& item : mask.points) {
+        for (const Point& item : mask.points) {
             Json::Value row(Json::objectValue);
             row["x"] = item.x;
             row["y"] = item.y;

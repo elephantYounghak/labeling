@@ -5,6 +5,6 @@
 namespace sam3_text {
 
 void load();
-SamOutput detect(const SamInput& input);
+Output detect(const Input& input);
 
 }  // namespace sam3_text

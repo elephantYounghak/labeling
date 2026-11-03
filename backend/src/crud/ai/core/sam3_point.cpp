@@ -114,7 +114,7 @@ void load()
     prompt_session = open_session(kModelDir / "prompt_encoder_mask_decoder_int8.onnx", cpu_options());
 }
 
-SamOutput detect(const SamInput& input)
+Output detect(const SamInput& input)
 {
     const std::string tool = normalized_tool(input.tool);
     if (!image_session || !prompt_session) {

@@ -122,7 +122,7 @@ void detect_ai_api()
                         static_cast<float>(result["y"].asFloat()),
                         parser.getParameter<std::string>("tool"),
                         result["word"].asString());
-                    const SamOutput output = model == "sam3_text" ? detect_sam_text(input) : detect_sam_point(input);
+                    const Output output = model == "sam3_text" ? detect_sam_text(input) : detect_sam_point(input);
                     const Json::Value shapes = sam_output_json(output);
                     result["boxes"] = shapes["boxes"];
                     result["masks"] = shapes["masks"];

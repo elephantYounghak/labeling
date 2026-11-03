@@ -35,7 +35,7 @@ std::string image_name(const Json::Value& row)
 
 }  // namespace
 
-RfdetrOutput rfdetr::detect()
+Output rfdetr::detect()
 {
     return {};
 }
