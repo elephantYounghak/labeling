@@ -1,15 +1,54 @@
 #pragma once
 
-#include "crud/ai/core.h"
-
+#include <json/json.h>
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/core/mat.hpp>
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
+
+struct SamPoint
+{
+    float x = 0;
+    float y = 0;
+};
+
+struct SamInput
+{
+    cv::Mat image;
+    float x = 0;
+    float y = 0;
+    std::string tool;
+    std::string word;
+};
+
+struct SamBox
+{
+    float x1 = 0;
+    float y1 = 0;
+    float x2 = 0;
+    float y2 = 0;
+    float score = 0;
+};
+
+struct SamMask
+{
+    std::vector<SamPoint> points;
+    float score = 0;
+};
+
+struct SamOutput
+{
+    std::vector<SamBox> boxes;
+    std::vector<SamMask> masks;
+};
+
+using SamOutputs = std::map<std::string, SamOutput>;
 
 namespace sam3 {
 

@@ -1,47 +1,11 @@
 #pragma once
 
+#include "crud/ai/core/sam3.h"
+
 #include <json/json.h>
-#include <opencv2/core/mat.hpp>
 
 #include <string>
 #include <string_view>
-#include <vector>
-
-struct SamPoint
-{
-    float x = 0;
-    float y = 0;
-};
-
-struct SamInput
-{
-    cv::Mat image;
-    float x = 0;
-    float y = 0;
-    std::string tool;
-    std::string word;
-};
-
-struct SamBox
-{
-    float x1 = 0;
-    float y1 = 0;
-    float x2 = 0;
-    float y2 = 0;
-    float score = 0;
-};
-
-struct SamMask
-{
-    std::vector<SamPoint> points;
-    float score = 0;
-};
-
-struct SamOutput
-{
-    std::vector<SamBox> boxes;
-    std::vector<SamMask> masks;
-};
 
 void load_sam_text();
 void load_sam_point();
@@ -50,7 +14,7 @@ SamOutput detect_sam_text(const SamInput& input);
 SamOutput detect_sam_point(const SamInput& input);
 Json::Value sam_output_json(const SamOutput& output);
 
-std::string load_rfdetr();
-std::string detect_rfdetr();
-std::string upload_rfdetr(std::string_view bytes, const std::string& filename);
+std::string load();
+std::string detect();
+std::string upload(std::string_view bytes, const std::string& filename);
 void train_rfdetr(const std::string& dataset_dir, const std::string& size, int epochs, int batch_size);
