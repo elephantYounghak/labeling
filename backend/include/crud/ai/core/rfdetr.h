@@ -7,7 +7,7 @@
 
 namespace rfdetr {
 
-std::string load();
+void load();
 Output detect();
 std::string upload(std::string_view bytes, const std::string& filename);
 void train(const std::string& dataset_dir, const std::string& size, const std::string& tool, int epochs, int batch_size);

@@ -73,7 +73,7 @@ void load_ai_api()
                 } else if (model == "sam3_point") {
                     load_sam_point();
                 } else if (model == "rfdetr") {
-                    result["name"] = rfdetr::load();
+                    rfdetr::load();
                 } else {
                     throw std::runtime_error("지원하지 않는 모델입니다.");
                 }
