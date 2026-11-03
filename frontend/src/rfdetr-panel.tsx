@@ -1,9 +1,10 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import type { ImageEntry } from './folder'
 import { labeledImages } from './marks'
-import { detectAllApi } from './detect'
+import { detectionsToMarks } from './detect'
+import type { Mark } from './marks'
 import type { Project } from './projects'
-import { RFDETR_SIZES, startTrainApi, uploadModelApi, type RfdetrSize } from './rfdetr'
+import { inferImagesApi, RFDETR_SIZES, startTrainApi, uploadModelApi, type RfdetrSize } from './rfdetr'
 
 type Tab = 'train' | 'infer'
 
@@ -21,12 +22,16 @@ export function RfdetrPanel({
   images,
   labeledNames,
   prepareTrain,
+  onLoaded,
+  onDetected,
 }: {
   project: Project | null
   images: ImageEntry[]
   onLabeled: (imageNames: string[]) => void
   labeledNames?: ReadonlySet<string>
   prepareTrain: () => Promise<FileSystemDirectoryHandle | null>
+  onLoaded: () => void
+  onDetected: (imageName: string, marks: Mark[]) => void
 }) {
   const [tab, setTab] = useState<Tab>('train')
   const [size, setSize] = useState<RfdetrSize>('small')
@@ -104,16 +109,30 @@ export function RfdetrPanel({
     report('')
     setInferAllBusy(true)
     try {
-      await detectAllApi({
-        model: 'rfdetr',
-        name: 'RF-DETR',
-        path: project.path,
+      const files = []
+      for (const image of images) {
+        files.push({ name: image.name, file: await image.handle.getFile() })
+      }
+      const words = project.classes.map((item) => item.name).filter((name) => name.trim())
+      const detected = await inferImagesApi({
         tool: project.tool,
-        words: project.classes.map((item) => item.name).filter((name) => name.trim()),
-        images: images.map((image) => image.name),
+        words,
         threshold,
+        images: files,
       })
-      report('전체 추론 요청을 보냈습니다.')
+      const colorOf = (name: string) => project.classes.find((item) => item.name === name)?.color ?? '#ff6d2d'
+      let drawn = 0
+      for (const row of detected) {
+        const file = files.find((image) => image.name === row.name)
+        if (!file) continue
+        const bitmap = await createImageBitmap(file.file)
+        const natural = { width: bitmap.width, height: bitmap.height }
+        bitmap.close()
+        const marks = detectionsToMarks(row, project.tool, natural, words[0] ?? '', colorOf)
+        drawn += marks.length
+        if (marks.length > 0) onDetected(row.name, marks)
+      }
+      report(drawn > 0 ? `${drawn}개 박스를 그렸습니다.` : '검출된 영역이 없습니다.')
     } catch (error) {
       report(errorText(error, '전체 추론을 시작하지 못했습니다.'), true)
     } finally {
@@ -128,6 +147,7 @@ export function RfdetrPanel({
     try {
       await uploadModelApi(modelFile)
       setModelReady(true)
+      onLoaded()
       report('모델을 불러왔습니다.')
     } catch (error) {
       setModelReady(false)

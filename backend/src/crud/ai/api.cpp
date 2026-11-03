@@ -3,6 +3,7 @@
 #include "crud/ai/core.h"
 #include "crud/ai/core/rfdetr.h"
 #include "utils/dataset.h"
+#include "utils/image.h"
 #include "utils/path.h"
 
 #include <drogon/MultiPart.h>
@@ -53,6 +54,72 @@ int read_count(const std::string& text)
         return value;
     } catch (const std::exception&) {
         return 0;
+    }
+}
+
+float read_threshold(const std::string& text)
+{
+    if (text.empty()) {
+        return 0.5f;
+    }
+    try {
+        std::size_t used = 0;
+        const float value = std::stof(text, &used);
+        if (used != text.size()) {
+            return 0.5f;
+        }
+        if (value < 0.f) {
+            return 0.f;
+        }
+        if (value > 1.f) {
+            return 1.f;
+        }
+        return value;
+    } catch (const std::exception&) {
+        return 0.5f;
+    }
+}
+
+std::vector<std::string> read_words(const std::string& text)
+{
+    std::vector<std::string> words;
+    if (text.empty()) {
+        return words;
+    }
+    Json::Value root;
+    Json::CharReaderBuilder builder;
+    std::string errors;
+    const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    if (!reader->parse(text.data(), text.data() + text.size(), &root, &errors) || !root.isArray()) {
+        return words;
+    }
+    for (const Json::Value& item : root) {
+        if (item.isString()) {
+            words.push_back(item.asString());
+        }
+    }
+    return words;
+}
+
+void apply_names(Json::Value& shapes, const Output& output, const std::vector<std::string>& words)
+{
+    const auto name_of = [&words](int class_id) {
+        if (class_id < 0 || static_cast<size_t>(class_id) >= words.size()) {
+            return std::string();
+        }
+        return words[static_cast<size_t>(class_id)];
+    };
+    for (Json::ArrayIndex index = 0; index < output.boxes.size() && index < shapes["boxes"].size(); ++index) {
+        const std::string name = name_of(output.boxes[index].class_id);
+        if (!name.empty()) {
+            shapes["boxes"][index]["name"] = name;
+        }
+    }
+    for (Json::ArrayIndex index = 0; index < output.masks.size() && index < shapes["masks"].size(); ++index) {
+        const std::string name = name_of(output.masks[index].class_id);
+        if (!name.empty()) {
+            shapes["masks"][index]["name"] = name;
+        }
     }
 }
 
@@ -127,7 +194,12 @@ void detect_ai_api()
                     result["boxes"] = shapes["boxes"];
                     result["masks"] = shapes["masks"];
                 } else if (result["model"] == "rfdetr") {
-                    rfdetr::detect();
+                    RfdetrInput input;
+                    input.image = image_from_bytes(file.fileContent());
+                    const Output output = rfdetr::detect(input);
+                    const Json::Value shapes = sam_output_json(output);
+                    result["boxes"] = shapes["boxes"];
+                    result["masks"] = shapes["masks"];
                 } else {
                     throw std::runtime_error("지원하지 않는 모델입니다.");
                 }
@@ -146,13 +218,59 @@ void detect_ai_api()
             "/ai/detect-all",
             [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
                 drogon::MultiPartParser parser;
-                if (parser.parse(req) != 0 || parser.getFiles().empty()) {
-                    Json::Value failed;
-                    failed["error"] = "이미지 파일이 없습니다.";
-                    auto resp = drogon::HttpResponse::newHttpJsonResponse(failed);
-                    resp->setStatusCode(drogon::k400BadRequest);
-                    callback(resp);
+                if (parser.parse(req) != 0) {
+                    callback(json_error("이미지 파일을 읽지 못했습니다.", drogon::k400BadRequest));
                     return;
+                }
+                if (parser.getParameter<std::string>("model") != "rfdetr") {
+                    callback(json_error("지원하지 않는 모델입니다.", drogon::k400BadRequest));
+                    return;
+                }
+                std::vector<const drogon::HttpFile*> images;
+                for (const drogon::HttpFile& file : parser.getFiles()) {
+                    if (file.getItemName() == "images") {
+                        images.push_back(&file);
+                    }
+                }
+                if (images.empty()) {
+                    callback(json_error("이미지 파일이 없습니다.", drogon::k400BadRequest));
+                    return;
+                }
+
+                Json::Value paths;
+                Json::CharReaderBuilder builder;
+                const std::string paths_text = parser.getParameter<std::string>("paths");
+                std::string errors;
+                const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+                if (!reader->parse(paths_text.data(), paths_text.data() + paths_text.size(), &paths, &errors) || !paths.isArray()
+                    || paths.size() != images.size()) {
+                    callback(json_error("이미지 경로가 없습니다.", drogon::k400BadRequest));
+                    return;
+                }
+
+                const std::vector<std::string> words = read_words(parser.getParameter<std::string>("words"));
+                const float threshold = read_threshold(parser.getParameter<std::string>("threshold"));
+                try {
+                    rfdetr::load();
+                    Json::Value result(Json::objectValue);
+                    Json::Value rows(Json::arrayValue);
+                    for (size_t index = 0; index < images.size(); ++index) {
+                        RfdetrInput input;
+                        input.image = image_from_bytes(images[index]->fileContent());
+                        input.threshold = threshold;
+                        const Output output = rfdetr::detect(input);
+                        Json::Value shapes = sam_output_json(output);
+                        apply_names(shapes, output, words);
+                        Json::Value row(Json::objectValue);
+                        row["name"] = paths[static_cast<Json::ArrayIndex>(index)].asString();
+                        row["boxes"] = std::move(shapes["boxes"]);
+                        row["masks"] = std::move(shapes["masks"]);
+                        rows.append(std::move(row));
+                    }
+                    result["images"] = std::move(rows);
+                    callback(drogon::HttpResponse::newHttpJsonResponse(result));
+                } catch (const std::exception& error) {
+                    callback(json_error(error.what(), drogon::k500InternalServerError));
                 }
             },
             {drogon::Post});
@@ -176,6 +294,7 @@ void upload_ai_api()
             try {
                 Json::Value saved;
                 saved["name"] = rfdetr::upload(file.fileContent(), file.getFileName());
+                rfdetr::load();
                 callback(drogon::HttpResponse::newHttpJsonResponse(saved));
             } catch (const std::exception& error) {
                 callback(json_error(error.what(), drogon::k500InternalServerError));

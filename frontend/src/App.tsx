@@ -877,6 +877,15 @@ function App() {
                 if (names.includes(currentNameRef.current)) setStageVersion((version) => version + 1)
                 setLabelsTick((tick) => tick + 1)
               }}
+              onLoaded={() => {
+                setLoadedModelIds((ids) => (ids.includes('rfdetr') ? ids : [...ids, 'rfdetr']))
+              }}
+              onDetected={(name, marks) => {
+                if (!active) return
+                const base = fileMarksRef.current ?? loadStoredMarks(active.id)
+                persistImageMarks(active.id, name, [...marksForImage(base, name), ...marks])
+                if (name === currentNameRef.current) setStageVersion((version) => version + 1)
+              }}
             />
           ) : (
             <>

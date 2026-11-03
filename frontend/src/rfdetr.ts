@@ -26,6 +26,43 @@ async function errorMessage(res: Response, fallback: string) {
   return detail || fallback
 }
 
+export type InferImage = {
+  name: string
+  file: File
+}
+
+export type InferResult = {
+  name: string
+  boxes?: unknown
+  masks?: unknown
+}
+
+export async function inferImagesApi(input: {
+  tool: TrainRequest['tool']
+  words: string[]
+  threshold: number
+  images: InferImage[]
+}): Promise<InferResult[]> {
+  const form = new FormData()
+  form.append('model', 'rfdetr')
+  form.append('tool', input.tool)
+  form.append('threshold', String(input.threshold))
+  form.append('words', JSON.stringify(input.words))
+  form.append('paths', JSON.stringify(input.images.map((image) => image.name)))
+  for (const image of input.images) {
+    form.append('images', image.file, image.file.name)
+  }
+  const res = await fetch('/ai/detect-all', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(await errorMessage(res, '전체 추론 API가 실패했습니다.'))
+  const body = (await res.json().catch(() => null)) as { images?: unknown }
+  if (!Array.isArray(body?.images)) return []
+  return body.images.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as { name?: unknown; boxes?: unknown; masks?: unknown }
+    return typeof row.name === 'string' ? [{ name: row.name, boxes: row.boxes, masks: row.masks }] : []
+  })
+}
+
 export async function uploadModelApi(file: File): Promise<void> {
   const form = new FormData()
   form.append('file', file, file.name)

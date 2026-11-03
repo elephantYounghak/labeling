@@ -26,7 +26,7 @@ struct SamInput
 struct RfdetrInput
 {
     cv::Mat image;
-
+    float threshold = 0.5f;
 };
 
 struct Box
@@ -36,12 +36,14 @@ struct Box
     float x2 = 0;
     float y2 = 0;
     float score = 0;
+    int class_id = -1;
 };
 
 struct Mask
 {
     std::vector<Point> points;
     float score = 0;
+    int class_id = -1;
 };
 
 struct Output
