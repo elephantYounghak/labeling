@@ -110,7 +110,7 @@ std::string normalized_tool(const std::string& tool)
     throw std::runtime_error("도구는 bbox, polygon, brush 중 하나여야 합니다.");
 }
 
-cv::Mat input_rgb(const Input& input)
+cv::Mat input_rgb(const SamInput& input)
 {
     if (input.image.empty()) {
         throw std::runtime_error("이미지가 없습니다.");
@@ -170,9 +170,9 @@ Output to_output(const std::vector<Prediction>& predictions, const std::string& 
     return output;
 }
 
-Input make_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word)
+SamInput make_input(std::string_view bytes, float x, float y, const std::string& tool, const std::string& word)
 {
-    Input input;
+    SamInput input;
     input.image = image_from_bytes(bytes);
     input.x = x;
     input.y = y;

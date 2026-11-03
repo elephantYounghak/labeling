@@ -92,11 +92,10 @@ fs::path newest_onnx()
 
 }  // namespace
 
-std::string rfdetr::load()
+void rfdetr::load()
 {
     const fs::path file = newest_onnx();
     session = sam3::open_session(file, sam3::gpu_options());
-    return path_to_utf8(file.filename());
 }
 
 std::string rfdetr::upload(std::string_view bytes, const std::string& filename)

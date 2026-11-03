@@ -506,7 +506,7 @@ void load()
     decoder_session = open_session(kModelDir / "decoder_int4.onnx", cpu_options());
 }
 
-Output detect(const Input& input)
+Output detect(const SamInput& input)
 {
     const std::string tool = normalized_tool(input.tool);
     if (!image_session || !language_session || !decoder_session) {
