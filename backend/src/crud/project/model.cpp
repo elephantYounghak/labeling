@@ -16,3 +16,12 @@ void upload_project(Project& project)
         soci::into(id);
     project.id = std::to_string(id);
 }
+
+void delete_project(const std::string* id)
+{
+    std::string id_str = *id;
+    soci::session db = get_db();
+    db << "DELETE FROM dbo.projects WHERE id = :id",
+        soci::use(id, "id");
+}
+

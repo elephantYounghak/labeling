@@ -11,6 +11,7 @@ int main()
     configure_drogon();
     upload_project_api();
     upload_labeling_api();
+    delete_project_api();
     update_labeling_api();
     load_ai_api();
     detect_ai_api();

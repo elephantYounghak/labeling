@@ -17,6 +17,7 @@ import { MODELS, loadModelApi, loadSelectedModelId, saveSelectedModelId } from '
 import {
   createLabelingApi,
   createProjectApi,
+  deleteProjectApi,
   formatDate,
   loadProjects,
   saveProjects,
@@ -117,6 +118,9 @@ function App() {
   const [classes, setClasses] = useState<LabelClass[]>([{ name: 'object', color: CLASS_COLORS[0] }])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const [picking, setPicking] = useState(false)
   const [images, setImages] = useState<ImageEntry[]>([])
   const [imageUrl, setImageUrl] = useState('')
@@ -194,13 +198,18 @@ function App() {
   }, [activeId, imageIndex, images.length, imagesReady, location.pathname, navigate, projects, route.imageValid, route.known])
 
   useEffect(() => {
-    if (!modalOpen) return
+    if (!modalOpen && !deleteTarget) return
     function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !busy) navigate('/')
+      if (event.key !== 'Escape') return
+      if (deleteTarget) {
+        if (!deleteBusy) setDeleteTarget(null)
+        return
+      }
+      if (!busy) navigate('/')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [modalOpen, busy, navigate])
+  }, [modalOpen, busy, deleteTarget, deleteBusy, navigate])
 
   useEffect(() => {
     if (!activeId) {
@@ -425,6 +434,33 @@ function App() {
     }
   }
 
+  function openDelete(project: Project) {
+    setDeleteError('')
+    setDeleteTarget(project)
+  }
+
+  function closeDelete() {
+    if (!deleteBusy) setDeleteTarget(null)
+  }
+
+  async function onDelete() {
+    if (!deleteTarget || deleteBusy) return
+    setDeleteBusy(true)
+    setDeleteError('')
+    try {
+      await deleteProjectApi(deleteTarget.id)
+    } catch {
+      setDeleteError('백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 시도해 주세요.')
+      setDeleteBusy(false)
+      return
+    }
+    const id = deleteTarget.id
+    persist(projects.filter((item) => item.id !== id))
+    setDeleteTarget(null)
+    setDeleteBusy(false)
+    if (activeId === id) navigate('/', { replace: true })
+  }
+
   function patchActive(patch: Partial<Project>) {
     if (!active) return
     persist(projects.map((item) => (item.id === active.id ? { ...item, ...patch } : item)))
@@ -544,9 +580,14 @@ function App() {
               Create Project
             </button>
           ) : (
-            <button type="button" className="ghost" onClick={() => navigate('/')}>
-              목록으로
-            </button>
+            <div className="top-actions">
+              <button type="button" className="danger" onClick={() => openDelete(active)}>
+                삭제
+              </button>
+              <button type="button" className="ghost" onClick={() => navigate('/')}>
+                목록으로
+              </button>
+            </div>
           )}
         </header>
 
@@ -737,8 +778,8 @@ function App() {
           ) : (
             <ul className="cards">
               {projects.map((project) => (
-                <li key={project.id}>
-                  <button type="button" className="card" onClick={() => navigate(projectPath(project.id))}>
+                <li key={project.id} className="card">
+                  <button type="button" className="card-open" onClick={() => navigate(projectPath(project.id))}>
                     <div className="thumb" style={{ background: classGradient(project.classes) }}>
                       <span>{project.tool}</span>
                     </div>
@@ -752,6 +793,14 @@ function App() {
                         <span>{formatDate(project.createdAt)}</span>
                       </footer>
                     </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="card-delete"
+                    aria-label={`${project.name} 삭제`}
+                    onClick={() => openDelete(project)}
+                  >
+                    삭제
                   </button>
                 </li>
               ))}
@@ -817,6 +866,38 @@ function App() {
           ) : null}
         </section>
       </aside>
+
+      {deleteTarget ? (
+        <div className="overlay" onClick={closeDelete}>
+          <div className="modal confirm-modal" role="dialog" aria-labelledby="delete-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <p className="kicker">Delete</p>
+                <h2 id="delete-title">프로젝트 삭제</h2>
+                <p className="lede">{deleteTarget.name} 프로젝트를 삭제합니다.</p>
+              </div>
+              <button type="button" className="close" aria-label="닫기" onClick={closeDelete} disabled={deleteBusy}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+            {deleteError ? (
+              <p className="error confirm-error" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="modal-footer">
+              <button type="button" className="ghost" onClick={closeDelete} disabled={deleteBusy}>
+                취소
+              </button>
+              <button type="button" className="danger" onClick={onDelete} disabled={deleteBusy}>
+                {deleteBusy ? '삭제 중…' : '삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {modalOpen ? (
         <div className="overlay" onClick={closeCreate}>

@@ -16,3 +16,4 @@ public:
 };
 
 void upload_project(Project& project);
+void delete_project(const std::string* id);

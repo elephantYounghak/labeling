@@ -109,6 +109,17 @@ export async function createProjectApi(project: Project): Promise<string> {
   return String(data.id)
 }
 
+export async function deleteProjectApi(id: string): Promise<void> {
+  const res = await fetch('/project/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  })
+  if (!res.ok) {
+    throw new Error('프로젝트 삭제 API가 실패했습니다.')
+  }
+}
+
 export async function createLabelingApi(project: Project): Promise<void> {
   const res = await fetch('/labeling/upload', {
     method: 'POST',

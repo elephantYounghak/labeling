@@ -35,3 +35,29 @@ void upload_project_api()
         },
         {drogon::Post});
 }
+
+void delete_project_api()
+{
+    drogon::app().registerHandler(
+        "/project/delete",
+        [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            const auto body = req->getJsonObject();
+            Project project;
+            project.id = body ? (*body)["id"].asString() : "";
+            try {
+                delete_project(&project.id);
+            } catch (const std::exception&) {
+                Json::Value error;
+                error["error"] = "프로젝트를 삭제하지 못했습니다.";
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+                resp->setStatusCode(drogon::k500InternalServerError);
+                callback(resp);
+                return;
+            }
+
+            Json::Value deleted;
+            deleted["id"] = project.id;
+            callback(drogon::HttpResponse::newHttpJsonResponse(deleted));
+        },
+        {drogon::Post});
+}
