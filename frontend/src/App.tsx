@@ -648,7 +648,6 @@ function App() {
                         labelClass={active.classes[labelClass] ?? active.classes[0] ?? null}
                         classes={active.classes}
                         onClassIndex={setLabelClass}
-                        onTool={(next) => patchActive({ tool: next })}
                         modelId={selectedModel.id}
                         modelName={selectedModel.name}
                         modelDescription={selectedModel.description}
@@ -699,22 +698,6 @@ function App() {
                       <button type="button" className="text-danger" onClick={onChangeFolder} disabled={picking}>
                         {picking ? '선택 중…' : '변경'}
                       </button>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>도구</dt>
-                    <dd>
-                      <select
-                        aria-label="라벨 도구"
-                        value={active.tool}
-                        onChange={(event) => patchActive({ tool: event.target.value as LabelTool })}
-                      >
-                        {TOOLS.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
                     </dd>
                   </div>
                   <div>

@@ -42,12 +42,6 @@ type Gesture =
   | { kind: 'resize'; id: string; handle: HandleName; box: Box }
   | { kind: 'vertex'; id: string; index: number }
 
-const TOOLS: { id: LabelTool; label: string; key: string }[] = [
-  { id: 'bbox', label: 'bbox', key: 'B' },
-  { id: 'polygon', label: 'polygon', key: 'P' },
-  { id: 'brush', label: 'brush', key: 'M' },
-]
-
 const RESIZE_CURSOR: Record<HandleName, string> = {
   nw: 'nwse-resize',
   se: 'nwse-resize',
@@ -86,7 +80,6 @@ export function LabelStage({
   labelClass,
   classes,
   onClassIndex,
-  onTool,
   modelId,
   modelName,
   modelDescription,
@@ -106,7 +99,6 @@ export function LabelStage({
   labelClass: LabelClass | null
   classes: LabelClass[]
   onClassIndex: (index: number) => void
-  onTool: (tool: LabelTool) => void
   modelId: string
   modelName: string
   modelDescription: string
@@ -154,7 +146,6 @@ export function LabelStage({
   const labelRef = useRef(labelClass)
   const classesRef = useRef(classes)
   const onClassRef = useRef(onClassIndex)
-  const onToolRef = useRef(onTool)
   const onSavedRef = useRef(onSaved)
   const onEditStartRef = useRef(onEditStart)
   const brushRef = useRef(brushSize)
@@ -261,7 +252,6 @@ export function LabelStage({
     labelRef.current = labelClass
     classesRef.current = classes
     onClassRef.current = onClassIndex
-    onToolRef.current = onTool
     onFileMarksRef.current = onFileMarks
     onSavedRef.current = onSaved
     onEditStartRef.current = onEditStart
@@ -406,10 +396,6 @@ export function LabelStage({
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedRef.current) {
         event.preventDefault()
         removeMark(selectedRef.current)
-        return
-      }
-      if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'b' || key === 'p' || key === 'm')) {
-        onToolRef.current(key === 'b' ? 'bbox' : key === 'p' ? 'polygon' : 'brush')
         return
       }
       if (toolRef.current === 'brush' && !event.ctrlKey && !event.metaKey && key === 'e') {
@@ -1024,20 +1010,6 @@ export function LabelStage({
   return (
     <div className="label-workspace">
       <div className="label-bar">
-        <div className="seg" role="radiogroup" aria-label="라벨 도구">
-          {TOOLS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="radio"
-              aria-checked={tool === item.id}
-              title={`${item.label} (${item.key})`}
-              onClick={() => onTool(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
         <div className="class-pick" ref={labelMenuRef}>
           <span className="detect-label">라벨</span>
           {classes.length === 0 ? (
