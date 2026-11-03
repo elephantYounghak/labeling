@@ -13,6 +13,7 @@ export type TrainImage = {
 
 export type TrainRequest = {
   size: RfdetrSize
+  tool: 'bbox' | 'polygon' | 'brush'
   epochs: number
   batchSize: number
   annotation: File
@@ -35,6 +36,7 @@ export async function uploadModelApi(file: File): Promise<void> {
 export async function startTrainApi(request: TrainRequest): Promise<string> {
   const form = new FormData()
   form.append('size', request.size)
+  form.append('tool', request.tool)
   form.append('epochs', String(request.epochs))
   form.append('batchSize', String(request.batchSize))
   form.append('annotation', request.annotation, '_annotation_.json')

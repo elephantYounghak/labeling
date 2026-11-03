@@ -1,4 +1,4 @@
-#include "crud/ai/core.h"
+#include "crud/ai/core/rfdetr.h"
 #include "crud/ai/core/sam3.h"
 
 #include "utils/coco.h"
@@ -35,9 +35,9 @@ std::string image_name(const Json::Value& row)
 
 }  // namespace
 
-std::string detect_rfdetr()
+RfdetrOutput rfdetr::detect()
 {
-    return "test";
+    return {};
 }
 
 namespace {
@@ -92,14 +92,14 @@ fs::path newest_onnx()
 
 }  // namespace
 
-std::string load_rfdetr()
+std::string rfdetr::load()
 {
     const fs::path file = newest_onnx();
     session = sam3::open_session(file, sam3::gpu_options());
     return path_to_utf8(file.filename());
 }
 
-std::string upload_rfdetr(std::string_view bytes, const std::string& filename)
+std::string rfdetr::upload(std::string_view bytes, const std::string& filename)
 {
     if (bytes.empty()) {
         throw std::runtime_error("ONNX 파일이 없습니다.");
@@ -118,7 +118,7 @@ std::string upload_rfdetr(std::string_view bytes, const std::string& filename)
 }
 
 std::string make_train_command(const std::string& dataset_dir, const std::string& size,
-    int epochs, int batch_size)
+    const std::string& tool, int epochs, int batch_size)
 {
     const fs::path script = "backend/src/crud/ai/core/rfdetr.py";
     if (!fs::is_regular_file(script)) {
@@ -132,6 +132,7 @@ std::string make_train_command(const std::string& dataset_dir, const std::string
 
     return "uv run --project backend -- python -P \"" + script.generic_string() + "\" \"" + dataset + "\""
         + " --size " + size
+        + " --tool " + tool
         + " --epochs " + std::to_string(epochs)
         + " --batch-size " + std::to_string(batch_size);
 }
@@ -239,7 +240,7 @@ void remove_uploaded_sources(const fs::path& dataset_root, const Json::Value& ro
 }  // namespace
 
 
-void train_rfdetr(const std::string& dataset_dir, const std::string& size, 
+void rfdetr::train(const std::string& dataset_dir, const std::string& size, const std::string& tool,
     int epochs, int batch_size)
 {
     if (dataset_dir.empty()) {
@@ -280,7 +281,7 @@ void train_rfdetr(const std::string& dataset_dir, const std::string& size,
     write_coco(valid_dir / L"_annotations.coco.json", split.second, valid_dir, classes);
     remove_uploaded_sources(dataset_root, root);
 
-    std::string command = make_train_command(dataset_dir, size, epochs, batch_size);
+    std::string command = make_train_command(dataset_dir, size, tool, epochs, batch_size);
     if (system(command.c_str()) != 0) {
         throw std::runtime_error("학습 스크립트가 실패했습니다.");
     }

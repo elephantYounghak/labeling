@@ -12,6 +12,7 @@ import {
   type ImageEntry,
 } from './folder'
 import { loadStoredMarks, marksForImage, type Mark } from './marks'
+import { detectAllApi } from './detect'
 import { LabelStage } from './label'
 import { MODELS, loadModelApi, loadSelectedModelId, saveSelectedModelId } from './models'
 import {
@@ -133,6 +134,7 @@ function App() {
   const [modelId, setModelId] = useState(loadSelectedModelId)
   const [loadedModelIds, setLoadedModelIds] = useState<string[]>([])
   const [modelBusy, setModelBusy] = useState(false)
+  const [inferAllBusy, setInferAllBusy] = useState(false)
   const [modelError, setModelError] = useState('')
   const [, setLabelsTick] = useState(0)
   const [stageVersion, setStageVersion] = useState(0)
@@ -500,6 +502,31 @@ function App() {
     setModelError('')
   }
 
+  async function onInferAll() {
+    if (!modelReady || !active || images.length === 0 || inferAllBusy) return
+    setInferAllBusy(true)
+    setModelError('')
+    try {
+      await detectAllApi({
+        model: selectedModel.id,
+        name: selectedModel.name,
+        path: active.path,
+        tool: active.tool,
+        words: active.classes.map((item) => item.name).filter((name) => name.trim()),
+        images: images.map((image) => image.name),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      setModelError(
+        message && message !== 'Failed to fetch'
+          ? message
+          : '백엔드에 연결하지 못했습니다. backend를 실행한 뒤 다시 시도해 주세요.',
+      )
+    } finally {
+      setInferAllBusy(false)
+    }
+  }
+
   async function onLoadModel() {
     if (modelBusy) return
     setModelBusy(true)
@@ -857,6 +884,14 @@ function App() {
                 {modelBusy ? '불러오는 중…' : '불러오기'}
               </button>
               {modelReady ? <p className="model-status ready">불러옴</p> : null}
+              <button
+                type="button"
+                className="primary"
+                onClick={onInferAll}
+                disabled={!modelReady || !active || images.length === 0 || inferAllBusy}
+              >
+                {inferAllBusy ? '추론 중…' : '전체 추론'}
+              </button>
             </>
           )}
           {modelError ? (

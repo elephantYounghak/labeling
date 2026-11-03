@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import type { ImageEntry } from './folder'
 import { labeledImages } from './marks'
+import { detectAllApi } from './detect'
 import type { Project } from './projects'
 import { RFDETR_SIZES, startTrainApi, uploadModelApi, type RfdetrSize } from './rfdetr'
 
@@ -38,6 +39,7 @@ export function RfdetrPanel({
   const [threshold, setThreshold] = useState(0.5)
   const [note, setNote] = useState('')
   const [failed, setFailed] = useState(false)
+  const [inferAllBusy, setInferAllBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const projectId = project?.id ?? ''
@@ -68,6 +70,7 @@ export function RfdetrPanel({
       }
       await startTrainApi({
         size,
+        tool: project.tool,
         epochs,
         batchSize,
         annotation,
@@ -94,6 +97,28 @@ export function RfdetrPanel({
     setModelFile(file)
     setModelReady(false)
     report('')
+  }
+
+  async function onInferAll() {
+    if (!project || !modelReady || images.length === 0 || inferAllBusy) return
+    report('')
+    setInferAllBusy(true)
+    try {
+      await detectAllApi({
+        model: 'rfdetr',
+        name: 'RF-DETR',
+        path: project.path,
+        tool: project.tool,
+        words: project.classes.map((item) => item.name).filter((name) => name.trim()),
+        images: images.map((image) => image.name),
+        threshold,
+      })
+      report('전체 추론 요청을 보냈습니다.')
+    } catch (error) {
+      report(errorText(error, '전체 추론을 시작하지 못했습니다.'), true)
+    } finally {
+      setInferAllBusy(false)
+    }
   }
 
   async function onLoadModel() {
@@ -218,6 +243,14 @@ export function RfdetrPanel({
               aria-label="신뢰도"
             />
           </label>
+          <button
+            type="button"
+            className="primary"
+            onClick={onInferAll}
+            disabled={!modelReady || images.length === 0 || inferAllBusy}
+          >
+            {inferAllBusy ? '추론 중…' : '전체 추론'}
+          </button>
         </div>
       )}
 

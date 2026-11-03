@@ -129,4 +129,13 @@ SamOutput detect(const SamInput& input)
     return to_output(predictions, tool);
 }
 
+void detect_all(const SamInput& input)
+{
+    const std::string tool = normalized_tool(input.tool);
+    if (!image_session || !prompt_session) {
+        throw std::runtime_error("SAM3 Point 모델을 먼저 불러와야 합니다.");
+    }
+    const cv::Mat rgb = input_rgb(input);
+    const ImageSize size = image_size(input.image);
+}
 }  // namespace sam3_point

@@ -1,6 +1,7 @@
 #include "crud/ai/api.h"
 
 #include "crud/ai/core.h"
+#include "crud/ai/core/rfdetr.h"
 #include "utils/dataset.h"
 #include "utils/path.h"
 
@@ -72,7 +73,7 @@ void load_ai_api()
                 } else if (model == "sam3_point") {
                     load_sam_point();
                 } else if (model == "rfdetr") {
-                    result["name"] = load_rfdetr();
+                    result["name"] = rfdetr::load();
                 } else {
                     throw std::runtime_error("지원하지 않는 모델입니다.");
                 }
@@ -126,7 +127,7 @@ void detect_ai_api()
                     result["boxes"] = shapes["boxes"];
                     result["masks"] = shapes["masks"];
                 } else if (result["model"] == "rfdetr") {
-                    detect_rfdetr();
+                    rfdetr::detect();
                 } else {
                     throw std::runtime_error("지원하지 않는 모델입니다.");
                 }
@@ -141,6 +142,20 @@ void detect_ai_api()
             callback(drogon::HttpResponse::newHttpJsonResponse(result));
         },
         {drogon::Post});
+        drogon::app().registerHandler(
+            "/ai/detect-all",
+            [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+                drogon::MultiPartParser parser;
+                if (parser.parse(req) != 0 || parser.getFiles().empty()) {
+                    Json::Value failed;
+                    failed["error"] = "이미지 파일이 없습니다.";
+                    auto resp = drogon::HttpResponse::newHttpJsonResponse(failed);
+                    resp->setStatusCode(drogon::k400BadRequest);
+                    callback(resp);
+                    return;
+                }
+            },
+            {drogon::Post});
 }
 
 void upload_ai_api()
@@ -160,7 +175,7 @@ void upload_ai_api()
             }
             try {
                 Json::Value saved;
-                saved["name"] = upload_rfdetr(file.fileContent(), file.getFileName());
+                saved["name"] = rfdetr::upload(file.fileContent(), file.getFileName());
                 callback(drogon::HttpResponse::newHttpJsonResponse(saved));
             } catch (const std::exception& error) {
                 callback(json_error(error.what(), drogon::k500InternalServerError));
@@ -180,10 +195,15 @@ void train_ai_api()
                 return;
             }
             const std::string size = parser.getParameter<std::string>("size");
+            const std::string tool = parser.getParameter<std::string>("tool");
             const int epochs = read_count(parser.getParameter<std::string>("epochs"));
             const int batch_size = read_count(parser.getParameter<std::string>("batchSize"));
             if (!allowed_size(size)) {
                 callback(json_error("모델 크기는 small, medium, large 중에서 고르세요.", drogon::k400BadRequest));
+                return;
+            }
+            if (tool != "bbox" && tool != "polygon" && tool != "brush") {
+                callback(json_error("라벨 도구는 bbox, polygon, brush 중에서 고르세요.", drogon::k400BadRequest));
                 return;
             }
             if (epochs < 1) {
@@ -234,7 +254,7 @@ void train_ai_api()
                     image_bytes.push_back(image->fileContent());
                 }
                 const std::filesystem::path dataset = save_train_files(id, annotation->fileContent(), image_bytes, paths);
-                train_rfdetr(path_to_utf8(dataset), size, epochs, batch_size);
+                rfdetr::train(path_to_utf8(dataset), size, tool, epochs, batch_size);
                 callback(drogon::HttpResponse::newHttpJsonResponse(saved));
             } catch (const std::exception& error) {
                 callback(json_error(error.what(), drogon::k500InternalServerError));

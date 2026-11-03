@@ -179,3 +179,32 @@ export async function detectApi(body: DetectRequest, file: File): Promise<unknow
   }
   return res.json()
 }
+
+export type DetectAllRequest = {
+  model: string
+  name: string
+  path: string
+  tool: LabelTool
+  words: string[]
+  images: string[]
+  threshold?: number
+}
+
+export async function detectAllApi(body: DetectAllRequest): Promise<void> {
+  const res = await fetch('/ai/detect-all', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    let message = '전체 추론 API가 실패했습니다.'
+    try {
+      const data = (await res.json()) as { error?: unknown }
+      if (typeof data.error === 'string' && data.error.trim()) {
+        message = data.error.trim()
+      }
+    } catch {
+    }
+    throw new Error(message)
+  }
+}
