@@ -814,7 +814,7 @@ export const LabelStage = forwardRef<
         point,
         size,
       )
-      if (hit && hit.id !== selectedRef.current) {
+      if (hit) {
         select(hit.id)
         beginHistory()
         setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
@@ -993,11 +993,20 @@ export const LabelStage = forwardRef<
       ? hitPolygonEdge(selected.points, pointer, frame)
       : null
   const drawing = gesture?.kind === 'bbox' || (tool === 'polygon' && draft.length > 0)
+  const brushGrab =
+    tool === 'brush' && !erasing && pointer && gesture?.kind !== 'brush' && gesture?.kind !== 'erase'
+      ? hitMark(
+          marks.filter((mark) => mark.tool === 'brush'),
+          pointer,
+          frame,
+        )
+      : null
   let cursor = tool !== 'brush' ? 'crosshair' : 'none'
   if (gesture?.kind === 'resize') cursor = RESIZE_CURSOR[gesture.handle]
   else if (gesture?.kind === 'move' || gesture?.kind === 'vertex') cursor = 'grabbing'
   else if (!drawing && hoverHandle) cursor = RESIZE_CURSOR[hoverHandle]
   else if (!drawing && hoverEdge) cursor = 'copy'
+  else if (brushGrab) cursor = 'move'
   else if (!drawing && tool !== 'brush' && pointer && hitMark(marks, pointer, frame)) cursor = 'move'
   else if (detectBusy) cursor = 'progress'
 
@@ -1252,7 +1261,7 @@ export const LabelStage = forwardRef<
                   {Math.max(1, Math.round(sizeBox.w * natural.width))} × {Math.max(1, Math.round(sizeBox.h * natural.height))}
                 </span>
               ) : null}
-              {tool === 'brush' && pointer ? (
+              {tool === 'brush' && pointer && !brushGrab && gesture?.kind !== 'move' ? (
                 <span
                   className={erasing ? 'brush-cursor erasing' : 'brush-cursor'}
                   style={{
