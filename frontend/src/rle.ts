@@ -5,6 +5,7 @@ export type RleMask = {
 }
 
 type CachedMask = {
+  counts: string
   bits: Uint8Array
   filled: number
 }
@@ -61,10 +62,87 @@ export function decodeRle(counts: string, height: number, width: number): { bits
 
 export function cachedMask(id: string, mask: RleMask): CachedMask {
   const cached = bitsCache.get(id)
-  if (cached) return cached
+  if (cached && cached.counts === mask.counts) return cached
   const decoded = decodeRle(mask.counts, mask.height, mask.width)
-  bitsCache.set(id, decoded)
-  return decoded
+  const entry = { counts: mask.counts, ...decoded }
+  bitsCache.set(id, entry)
+  return entry
+}
+
+function encodeCocoCounts(runs: number[]) {
+  let text = ''
+  for (let index = 0; index < runs.length; index += 1) {
+    let value = runs[index]
+    if (index > 2) value -= runs[index - 2]
+    let more = true
+    while (more) {
+      let chunk = value & 31
+      value >>= 5
+      more = chunk & 16 ? value !== -1 : value !== 0
+      if (more) chunk |= 32
+      text += String.fromCharCode(chunk + 48)
+    }
+  }
+  return text
+}
+
+function encodeMaskCounts(bits: Uint8Array, height: number, width: number) {
+  const runs: number[] = []
+  let on = 0
+  let count = 0
+  for (let column = 0; column < width; column += 1) {
+    for (let row = 0; row < height; row += 1) {
+      const bit = bits[row * width + column] ? 1 : 0
+      if (bit === on) count += 1
+      else {
+        runs.push(count)
+        on = bit
+        count = 1
+      }
+    }
+  }
+  runs.push(count)
+  return encodeCocoCounts(runs)
+}
+
+export function stampMask(
+  id: string,
+  mask: RleMask,
+  shift: { x: number; y: number },
+  points: { x: number; y: number }[],
+  radiusPx: number,
+  frame: { width: number; height: number },
+) {
+  const cached = cachedMask(id, mask)
+  const rx = (radiusPx * mask.width) / Math.max(frame.width, 1)
+  const ry = (radiusPx * mask.height) / Math.max(frame.height, 1)
+  let changed = false
+  for (const center of points) {
+    const cx = (center.x - shift.x) * mask.width
+    const cy = (center.y - shift.y) * mask.height
+    const left = Math.max(0, Math.floor(cx - rx))
+    const right = Math.min(mask.width - 1, Math.ceil(cx + rx))
+    const top = Math.max(0, Math.floor(cy - ry))
+    const bottom = Math.min(mask.height - 1, Math.ceil(cy + ry))
+    for (let y = top; y <= bottom; y += 1) {
+      for (let x = left; x <= right; x += 1) {
+        const dx = (x - cx) / Math.max(rx, 0.001)
+        const dy = (y - cy) / Math.max(ry, 0.001)
+        if (dx * dx + dy * dy > 1) continue
+        const offset = y * mask.width + x
+        if (cached.bits[offset]) continue
+        cached.bits[offset] = 1
+        cached.filled += 1
+        changed = true
+      }
+    }
+  }
+  if (!changed) return null
+  for (const key of sheetCache.keys()) {
+    if (key.startsWith(`${id}:`)) sheetCache.delete(key)
+  }
+  cached.counts = encodeMaskCounts(cached.bits, mask.height, mask.width)
+  return cached.counts
 }
 
 export function clearMaskCache() {

@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   BOX_HANDLES,
+  addBrushStroke,
   boxOf,
   boxPoints,
   brushStrokes,
@@ -181,7 +182,15 @@ export const LabelStage = forwardRef<
   function select(id: string | null) {
     selectedRef.current = id
     setSelectedId(id)
-    if (extendRef.current && extendRef.current !== id) {
+    const mark = id ? marksRef.current.find((item) => item.id === id) : null
+    if (mark?.tool === 'brush') {
+      if (extendRef.current !== id) {
+        extendRef.current = id
+        setExtendId(id)
+      }
+      return
+    }
+    if (extendRef.current) {
       extendRef.current = null
       setExtendId(null)
     }
@@ -202,19 +211,6 @@ export const LabelStage = forwardRef<
   }
 
   function chooseMark(mark: Mark) {
-    if (mark.tool === 'brush' && extendRef.current === mark.id) {
-      extendRef.current = null
-      setExtendId(null)
-      select(mark.id)
-      return
-    }
-    if (mark.tool === 'brush') {
-      extendRef.current = mark.id
-      setExtendId(mark.id)
-    } else {
-      extendRef.current = null
-      setExtendId(null)
-    }
     select(mark.id)
   }
 
@@ -645,6 +641,8 @@ export const LabelStage = forwardRef<
       if (mark.tool !== 'brush') continue
       if (mark.mask) {
         paintMask(mark, Math.max(alpha, 0.35), mark.id === selectedRef.current)
+        const extra = liveStroke && extendTarget?.id === mark.id ? [liveStroke] : undefined
+        if (extra) paintMark([], undefined, mark.color, brushRef.current, Math.max(alpha, 0.65), false, extra)
         continue
       }
       const extra = liveStroke && extendTarget?.id === mark.id ? [liveStroke] : undefined
@@ -816,7 +814,7 @@ export const LabelStage = forwardRef<
         point,
         size,
       )
-      if (hit) {
+      if (hit && hit.id !== selectedRef.current) {
         select(hit.id)
         beginHistory()
         setGestureNow({ kind: 'move', id: hit.id, origin: point, base: hit.points.map((item) => ({ ...item })) })
@@ -932,14 +930,9 @@ export const LabelStage = forwardRef<
       const target = marksRef.current.find((mark) => mark.id === extendRef.current && mark.tool === 'brush')
       if (target) {
         const before = marksRef.current
-        const cut = target.points.length
-        setMarksNow(
-          before.map((mark) =>
-            mark.id === target.id
-              ? { ...mark, points: [...mark.points, ...drawn], cuts: [...(mark.cuts ?? []), cut] }
-              : mark,
-          ),
-        )
+        const next = addBrushStroke(target, drawn, brushRef.current / 2, size)
+        if (!next) return
+        setMarksNow(before.map((mark) => (mark.id === target.id ? next : mark)))
         pushPast(before)
         return
       }

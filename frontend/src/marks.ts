@@ -1,5 +1,5 @@
 import type { LabelTool } from './projects'
-import { maskContains, punchMask, type RleMask } from './rle'
+import { maskContains, punchMask, stampMask, type RleMask } from './rle'
 
 export type MarkPoint = { x: number; y: number }
 
@@ -515,6 +515,55 @@ export function eraseBrush(marks: Mark[], center: MarkPoint, radiusPx: number, f
     })
   }
   return next
+}
+
+function growBox(box: Box, points: MarkPoint[], padX: number, padY: number): Box {
+  let x1 = box.x
+  let y1 = box.y
+  let x2 = box.x + box.w
+  let y2 = box.y + box.h
+  for (const point of points) {
+    x1 = Math.min(x1, point.x - padX)
+    y1 = Math.min(y1, point.y - padY)
+    x2 = Math.max(x2, point.x + padX)
+    y2 = Math.max(y2, point.y + padY)
+  }
+  x1 = Math.max(0, x1)
+  y1 = Math.max(0, y1)
+  x2 = Math.min(1, x2)
+  y2 = Math.min(1, y2)
+  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) }
+}
+
+export function addBrushStroke(mark: Mark, points: MarkPoint[], radiusPx: number, frame: FrameSize): Mark | null {
+  if (mark.tool !== 'brush' || points.length === 0) return null
+  if (mark.mask) {
+    const shift = maskOffset(mark)
+    const counts = stampMask(mark.id, mark.mask, shift, points, radiusPx, frame)
+    if (!counts) return null
+    const padX = radiusPx / Math.max(frame.width, 1)
+    const padY = radiusPx / Math.max(frame.height, 1)
+    const current = boxOf(mark.points) ?? mark.mask.box
+    const nextBox = growBox(current, points, padX, padY)
+    const nextOrigin = growBox(
+      mark.mask.box,
+      points.map((point) => ({ x: point.x - shift.x, y: point.y - shift.y })),
+      padX,
+      padY,
+    )
+    return {
+      ...mark,
+      points: boxPoints(nextBox),
+      mask: { ...mark.mask, counts, box: nextOrigin },
+      maskRev: (mark.maskRev ?? 0) + 1,
+    }
+  }
+  const cut = mark.points.length
+  return {
+    ...mark,
+    points: [...mark.points, ...points],
+    cuts: [...(mark.cuts ?? []), cut],
+  }
 }
 
 export function maskOffset(mark: Mark) {
