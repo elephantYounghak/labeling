@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   BOX_HANDLES,
   boxOf,
@@ -70,26 +70,13 @@ function clampPan(x: number, y: number, zoom: number, frame: Frame, viewWidth: n
   return { x: left - frame.left, y: top - frame.top }
 }
 
-export function LabelStage({
-  projectId,
-  imageName,
-  imageUrl,
-  imageFile,
-  tool,
-  opacity,
-  labelClass,
-  classes,
-  onClassIndex,
-  modelId,
-  modelName,
-  modelDescription,
-  modelReady,
-  folderPath,
-  onSaved,
-  onEditStart,
-  initialMarks,
-  onFileMarks,
-}: {
+export type LabelStageHandle = {
+  assignLabel: (index: number) => void
+}
+
+export const LabelStage = forwardRef<
+  LabelStageHandle,
+  {
   projectId: string
   imageName: string
   imageUrl: string
@@ -108,7 +95,26 @@ export function LabelStage({
   onEditStart: () => void
   initialMarks: Mark[] | null
   onFileMarks: (imageName: string, marks: Mark[]) => void
-}) {
+}>(function LabelStage({
+  projectId,
+  imageName,
+  imageUrl,
+  imageFile,
+  tool,
+  opacity,
+  labelClass,
+  classes,
+  onClassIndex,
+  modelId,
+  modelName,
+  modelDescription,
+  modelReady,
+  folderPath,
+  onSaved,
+  onEditStart,
+  initialMarks,
+  onFileMarks,
+}, ref) {
   const imgRef = useRef<HTMLImageElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const brushCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -146,6 +152,7 @@ export function LabelStage({
   const labelRef = useRef(labelClass)
   const classesRef = useRef(classes)
   const onClassRef = useRef(onClassIndex)
+  const assignLabelRef = useRef<(index: number) => void>(() => {})
   const onSavedRef = useRef(onSaved)
   const onEditStartRef = useRef(onEditStart)
   const brushRef = useRef(brushSize)
@@ -178,6 +185,20 @@ export function LabelStage({
       extendRef.current = null
       setExtendId(null)
     }
+  }
+
+  function assignSelectedLabel(index: number) {
+    const item = classesRef.current[index]
+    const id = selectedRef.current
+    if (item && id) {
+      const before = marksRef.current
+      const current = before.find((mark) => mark.id === id)
+      if (current && (current.name !== item.name || current.color !== item.color)) {
+        setMarksNow(before.map((mark) => (mark.id === id ? { ...mark, name: item.name, color: item.color } : mark)))
+        pushPast(before)
+      }
+    }
+    onClassRef.current(index)
   }
 
   function chooseMark(mark: Mark) {
@@ -243,6 +264,10 @@ export function LabelStage({
     finishMark('polygon', points.map((point) => clampPoint(point)))
   }
 
+  useImperativeHandle(ref, () => ({
+    assignLabel: (index: number) => assignLabelRef.current(index),
+  }))
+
   useEffect(() => {
     marksRef.current = marks
     draftRef.current = draft
@@ -252,6 +277,7 @@ export function LabelStage({
     labelRef.current = labelClass
     classesRef.current = classes
     onClassRef.current = onClassIndex
+    assignLabelRef.current = assignSelectedLabel
     onFileMarksRef.current = onFileMarks
     onSavedRef.current = onSaved
     onEditStartRef.current = onEditStart
@@ -369,7 +395,7 @@ export function LabelStage({
       }
       if (!event.ctrlKey && !event.metaKey && !event.altKey && /^[1-9]$/.test(event.key)) {
         const index = Number(event.key) - 1
-        if (index < classesRef.current.length) onClassRef.current(index)
+        if (index < classesRef.current.length) assignLabelRef.current(index)
         return
       }
       if (event.key === 'Enter' && toolRef.current === 'polygon' && draftRef.current.length >= 3) {
@@ -1039,7 +1065,7 @@ export function LabelStage({
                       role="option"
                       aria-selected={index === classIndex}
                       onClick={() => {
-                        onClassIndex(index)
+                        assignSelectedLabel(index)
                         labelOpenRef.current = false
                         setLabelOpen(false)
                       }}
@@ -1267,7 +1293,7 @@ export function LabelStage({
       </div>
     </div>
   )
-}
+})
 
 function MarkShape({ mark, opacity, selected, preview }: { mark: Mark; opacity: number; selected: boolean; preview: boolean }) {
   const stroke = preview ? '#ffffff' : selected ? '#ffffff' : mark.color

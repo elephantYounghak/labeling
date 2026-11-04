@@ -13,7 +13,7 @@ import {
 } from './folder'
 import { loadStoredMarks, marksForImage, type Mark } from './marks'
 import { detectAllApi } from './detect'
-import { LabelStage } from './label'
+import { LabelStage, type LabelStageHandle } from './label'
 import { MODELS, loadModelApi, loadSelectedModelId, saveSelectedModelId } from './models'
 import {
   createLabelingApi,
@@ -147,6 +147,7 @@ function App() {
   const pendingSave = useRef<{ handle: FileSystemDirectoryHandle; marks: Record<string, Mark[]> } | null>(null)
   const writeAsked = useRef(false)
   const flushSaveRef = useRef<() => Promise<void>>(async () => {})
+  const labelStageRef = useRef<LabelStageHandle>(null)
   const projectSeen = useRef<string | null | undefined>(undefined)
 
   const modalOpen = location.pathname === '/new'
@@ -638,6 +639,7 @@ function App() {
                   <div className="viewer">
                     {imageUrl && imageFile && currentImage ? (
                       <LabelStage
+                        ref={labelStageRef}
                         key={`${active.id}:${currentImage.name}:${stageVersion}`}
                         projectId={active.id}
                         imageName={currentImage.name}
@@ -726,7 +728,18 @@ function App() {
                     <div
                       className={index === labelClass ? 'class-row selected' : 'class-row'}
                       key={index}
-                      onClick={() => setLabelClass(index)}
+                      onClick={(event) => {
+                        const target = event.target
+                        if (
+                          target instanceof HTMLButtonElement ||
+                          (target instanceof HTMLInputElement && target.type === 'color')
+                        ) {
+                          setLabelClass(index)
+                          return
+                        }
+                        if (labelStageRef.current) labelStageRef.current.assignLabel(index)
+                        else setLabelClass(index)
+                      }}
                     >
                       <input
                         type="color"
